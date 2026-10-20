@@ -22,10 +22,16 @@ import {
   DEFAULT_WORKER_PROFILE,
   SessionWorkerSupervisor,
 } from '@deepseek-ai/dsh-session-worker-supervisor'
-import { inheritedPatchArgs, workerCommand } from './command.ts'
+import { DEFAULT_FORWARDED_ENV, forwardedEnvironment, inheritedPatchArgs, workerCommand } from './command.ts'
 import { SessionWorkerRouter } from './router.ts'
 
-export { inheritedPatchArgs, sharedNodeFlags, workerCommand } from './command.ts'
+export {
+  DEFAULT_FORWARDED_ENV,
+  forwardedEnvironment,
+  inheritedPatchArgs,
+  sharedNodeFlags,
+  workerCommand,
+} from './command.ts'
 export { SessionWorkerRouter } from './router.ts'
 
 /** Stable Cordis plugin name. */
@@ -42,8 +48,10 @@ export interface Config {
   readonly profile?: string
   /** Extra worker arguments; defaults to the Host's `--patch` overlays. */
   readonly args?: string[]
-  /** Explicit child environment entries merged onto the scrubbed parent env. */
+  /** Explicit child environment entries merged after the forwarded environment. */
   readonly env?: Readonly<Record<string, string>>
+  /** Exact names or `prefix*` patterns the worker inherits from the Host environment. */
+  readonly forwardEnv?: string[]
   /** Milliseconds an idle worker may live; `0` disables automatic shutdown. */
   readonly idleTimeoutMs?: number
   /** Milliseconds allowed for spawn, ready, and initialize. */
@@ -62,6 +70,7 @@ export const Config: z<Config> = z.object({
   profile: z.string().default(DEFAULT_WORKER_PROFILE),
   args: z.array(String),
   env: z.dict(z.string()).default({}),
+  forwardEnv: z.array(String),
   idleTimeoutMs: z.natural().min(0),
   readyTimeoutMs: z.natural().min(1).default(DEFAULT_READY_TIMEOUT_MS),
   shutdownTimeoutMs: z.natural().min(1).default(DEFAULT_SHUTDOWN_TIMEOUT_MS),
@@ -108,11 +117,24 @@ interface ResolvedConfig {
 }
 
 function resolveConfig(config: Config): ResolvedConfig {
+  // The schema materializes an unspecified string array as `[]`, so an empty
+  // value means "derive it" rather than "boot nothing".
+  const command = config.command !== undefined && config.command.length > 0
+    ? config.command
+    : workerCommand(process.execPath, process.execArgv, process.argv[1])
+  const args = config.args !== undefined && config.args.length > 0
+    ? config.args
+    : inheritedPatchArgs(process.argv.slice(2))
+  const forwardEnv = config.forwardEnv !== undefined && config.forwardEnv.length > 0
+    ? config.forwardEnv
+    : DEFAULT_FORWARDED_ENV
   return {
-    command: config.command ?? workerCommand(process.execPath, process.execArgv, process.argv[1]),
+    command,
     profile: config.profile ?? DEFAULT_WORKER_PROFILE,
-    args: config.args ?? inheritedPatchArgs(process.argv.slice(2)),
-    env: config.env ?? {},
+    args,
+    // The subprocess scrub removes DSH_* and credential-shaped names, so the
+    // deployment identity and any exported provider credential travel here.
+    env: { ...forwardedEnvironment(forwardEnv), ...config.env },
     idleTimeoutMs: config.idleTimeoutMs ?? idleTimeoutFromEnvironment(),
     readyTimeoutMs: config.readyTimeoutMs ?? DEFAULT_READY_TIMEOUT_MS,
     shutdownTimeoutMs: config.shutdownTimeoutMs ?? DEFAULT_SHUTDOWN_TIMEOUT_MS,

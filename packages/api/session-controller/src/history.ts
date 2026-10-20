@@ -121,7 +121,7 @@ export class SessionHistoryController {
   async *follow(request: SessionFollowRequest, signal: AbortSignal): AsyncIterable<SessionFollowFrame> {
     validateHistoryWindow(request)
     const lives = this.ctx.get('sessionWorkerLives')
-    if (lives !== undefined && request.address.kind === 'session' && lives.view(request.address.sessionId) !== undefined) {
+    if (lives !== undefined && request.address.kind === 'session' && lives.has(request.address.sessionId)) {
       yield* this.followLive(request, signal)
       return
     }
@@ -174,6 +174,15 @@ export class SessionHistoryController {
     try {
       let view = lives.view(target)
       while (view === undefined && !signal.aborted) {
+        // A worker that never published a baseline and no longer exists has
+        // nothing live to observe; the durable path owns the answer.
+        if (!lives.workerAvailable(target)) {
+          dispose()
+          signal.removeEventListener('abort', onAbort)
+          closed = true
+          yield* this.followCold(request, signal)
+          return
+        }
         await waker.wait()
         buffered.popFront()
         view = lives.view(target)

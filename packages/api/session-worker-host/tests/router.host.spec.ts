@@ -39,35 +39,35 @@ describe('Session worker host router', () => {
     expect(endpointRouter.stream?.('session/control', payload({}), (async function* () {})(), new AbortController().signal, owner))
       .toBeUndefined()
 
-    await expect(router.dispatch?.('session/prompt', payload({ sessionId, request: {} }), new AbortController().signal, owner))
+    await expect(router.dispatch?.('session/prompt', payload({ request: { sessionId } }), new AbortController().signal, owner))
       .resolves.toEqual({ ok: true, value: { accepted: true } })
     expect(acquired).toHaveBeenCalledWith(sessionId)
     expect(attach).toHaveBeenCalledWith(sessionId, expect.anything())
-    expect(call).toHaveBeenCalledWith('session/prompt', { sessionId, request: {} }, { signal: expect.anything() })
+    expect(call).toHaveBeenCalledWith('session/prompt', { request: { sessionId } }, { signal: expect.anything() })
   })
 
   it('leaves a cold cancel and a cold job kill to the host', async () => {
     const { router, acquired } = setup()
-    expect(router.dispatch('session/cancel', payload({ sessionId }), new AbortController().signal, owner))
+    expect(router.dispatch('session/cancel', payload({ request: { sessionId } }), new AbortController().signal, owner))
       .toBeUndefined()
-    expect(router.dispatch('job/kill', payload({ sessionId, jobId: 'job-1' }), new AbortController().signal, owner))
+    expect(router.dispatch('job/kill', payload({ request: { sessionId, jobId: 'job-1' } }), new AbortController().signal, owner))
       .toBeUndefined()
     expect(acquired).not.toHaveBeenCalled()
   })
 
   it('mints a Session identity for an unnamed create and attaches after success', async () => {
     const { router, call, attach } = setup()
-    await router.dispatch?.('session/create', payload({ cwd: '/repo' }), new AbortController().signal, owner)
+    await router.dispatch?.('session/create', payload({ request: { cwd: '/repo' } }), new AbortController().signal, owner)
     const forwarded = call.mock.calls[0] as unknown as [string, Record<string, unknown>]
     expect(forwarded[0]).toBe('session/create')
-    expect(forwarded[1]['cwd']).toBe('/repo')
-    expect(String(forwarded[1]['sessionId'])).toMatch(/^session-/)
-    expect(attach).toHaveBeenCalledWith(forwarded[1]['sessionId'], expect.anything())
+    expect((forwarded[1]['request'] as Record<string, unknown>)['cwd']).toBe('/repo')
+    expect(String((forwarded[1]['request'] as Record<string, unknown>)['sessionId'])).toMatch(/^session-/)
+    expect(attach).toHaveBeenCalledWith((forwarded[1]['request'] as Record<string, unknown>)['sessionId'], expect.anything())
   })
 
   it('denies a non-owner before spawning or forwarding', async () => {
     const { router, call, acquired } = setup({ decision: { kind: 'deny', reason: 'no-allow' } })
-    const result = await router.dispatch?.('session/prompt', payload({ sessionId }), new AbortController().signal, owner)
+    const result = await router.dispatch?.('session/prompt', payload({ request: { sessionId } }), new AbortController().signal, owner)
     expect(result).toMatchObject({ ok: false, error: { code: 'remote-access/denied' } })
     expect(acquired).not.toHaveBeenCalled()
     expect(call).not.toHaveBeenCalled()
@@ -75,7 +75,7 @@ describe('Session worker host router', () => {
 
   it('uses an existing worker without acquiring a new one', async () => {
     const { router, call, acquired, get } = setup({ live: true })
-    await router.dispatch?.('session/rename', payload({ sessionId, title: 'new' }), new AbortController().signal, owner)
+    await router.dispatch?.('session/rename', payload({ request: { sessionId, title: 'new' } }), new AbortController().signal, owner)
     expect(get).toHaveBeenCalledWith(sessionId)
     expect(acquired).not.toHaveBeenCalled()
     expect(call).toHaveBeenCalledOnce()

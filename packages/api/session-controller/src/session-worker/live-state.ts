@@ -191,6 +191,25 @@ export class SessionWorkerLives {
   }
 
   /**
+   * Report whether a worker owned this Session at least once, even before its
+   * first opening snapshot arrives.
+   * @param sessionId - ordinary Session identity.
+   * @returns true when live state exists for the Session.
+   */
+  has(sessionId: SessionId): boolean {
+    return this.sessions.has(sessionId)
+  }
+
+  /**
+   * Report whether a worker process currently owns the Session.
+   * @param sessionId - ordinary Session identity.
+   * @returns true while the attached worker has not exited.
+   */
+  workerAvailable(sessionId: SessionId): boolean {
+    return this.sessions.get(sessionId)?.worker !== undefined
+  }
+
+  /**
    * Look up the retained opening window for one Session.
    * @param sessionId - ordinary Session identity.
    * @returns the live view, or undefined before the first worker snapshot.

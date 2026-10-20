@@ -38,25 +38,27 @@ interface RouteTarget {
 }
 
 const SESSION_WRITES: Readonly<Record<string, RoutedWrite>> = {
-  'session/prompt': sessionField('sessionId'),
-  'session/cancel': { ...sessionField('sessionId'), spawn: false },
-  'session/rename': sessionField('sessionId'),
-  'session/selectModel': sessionField('sessionId'),
-  'session/updateQueue': sessionField('sessionId'),
+  'session/prompt': requestField('sessionId'),
+  'session/cancel': { ...requestField('sessionId'), spawn: false },
+  'session/rename': requestField('sessionId'),
+  'session/selectModel': requestField('sessionId'),
+  'session/updateQueue': requestField('sessionId'),
   'session/create': {
     session: (args) => {
-      const requested = readId(args, 'sessionId')
+      const request = requestOf(args)
+      if (request === undefined) return undefined
+      const requested = readId(request, 'sessionId')
       if (requested !== undefined) return { sessionId: requested, args }
       const sessionId = `session-${randomUUID()}` as SessionId
-      return { sessionId, args: { ...args, sessionId } }
+      return { sessionId, args: { ...args, request: { ...request, sessionId } } }
     },
     spawn: true,
     attachAfter: true,
   },
-  'commands/execute': sessionField('agentId'),
-  'subagents/prompt': sessionField('parentSessionId'),
-  'subagent/interruptByParent': { ...sessionField('parentSessionId'), spawn: false },
-  'job/kill': { ...sessionField('sessionId'), spawn: false },
+  'commands/execute': topLevelField('agentId'),
+  'subagents/prompt': requestField('parentSessionId'),
+  'subagent/interruptByParent': { ...topLevelField('parentSessionId'), spawn: false },
+  'job/kill': { ...requestField('sessionId'), spawn: false },
 }
 
 /**
@@ -154,7 +156,20 @@ export class SessionWorkerRouter implements TypertEndpointRouter {
   }
 }
 
-function sessionField(field: string): RoutedWrite {
+/** Session Remote methods carry one `request` object holding the identity. */
+function requestField(field: string): RoutedWrite {
+  return {
+    session: (args) => {
+      const request = requestOf(args)
+      const sessionId = request === undefined ? undefined : readId(request, field)
+      return sessionId === undefined ? undefined : { sessionId, args }
+    },
+    spawn: true,
+  }
+}
+
+/** Methods whose wire arguments name the identity at the top level. */
+function topLevelField(field: string): RoutedWrite {
   return {
     session: (args) => {
       const sessionId = readId(args, field)
@@ -162,6 +177,13 @@ function sessionField(field: string): RoutedWrite {
     },
     spawn: true,
   }
+}
+
+function requestOf(args: Readonly<Record<string, unknown>>): Readonly<Record<string, unknown>> | undefined {
+  const request = args['request']
+  return typeof request === 'object' && request !== null && !Array.isArray(request)
+    ? request as Record<string, unknown>
+    : undefined
 }
 
 function argsOf(payload: unknown): Readonly<Record<string, unknown>> | undefined {

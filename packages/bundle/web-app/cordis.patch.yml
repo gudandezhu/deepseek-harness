@@ -127,8 +127,8 @@
       name: '@deepseek-ai/dsh-session-worker-host'
       config:
         idleTimeoutMs: !!js Number(process.env.DSH_SESSION_WORKER_IDLE_MS ?? 60000)
-        readyTimeoutMs: 60000
-        shutdownTimeoutMs: 10000
+        readyTimeoutMs: 120000
+        shutdownTimeoutMs: 15000
         graceMs: 10000
 
     # Session commands, cold reads, and live control over Typert Remote.
