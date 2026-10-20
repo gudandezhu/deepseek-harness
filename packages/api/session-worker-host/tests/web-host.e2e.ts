@@ -173,6 +173,63 @@ describe('web host session workers', () => {
     expect(turn.assistant).toContain(MOCK_TEXT)
   }, 600_000)
 
+  it('resolves an upload receipt in the worker that resumes after an idle exit', async () => {
+    await waitForNoChildren(host.pid as number, 20_000)
+    const created = await rpc('session/create', { request: { cwd: project } })
+    expect(created.ok, JSON.stringify(created)).toBe(true)
+    const sessionId = (created as { ok: true; value: { sessionId: string } }).value.sessionId
+    const firstWorker = await waitForSingleWorker(host.pid as number)
+
+    // The browser uploads against the Host while the Agent lives in worker A.
+    const response = await fetch(
+      `${origin}/api/session/uploadFileBinary?sessionId=${encodeURIComponent(sessionId)}&name=approval.txt`,
+      {
+        method: 'POST',
+        headers: { 'content-type': 'application/octet-stream', cookie },
+        body: APPROVAL_FILE_TEXT,
+      },
+    )
+    const uploaded = await response.json() as {
+      readonly ok: boolean
+      readonly value?: { readonly receiptId: string; readonly file: { readonly attachmentId: string } }
+    }
+    expect(uploaded.ok, JSON.stringify(uploaded)).toBe(true)
+    const receipt = uploaded.value
+    if (receipt === undefined) throw new Error('upload returned no receipt')
+
+    // Worker A leaves without consuming the receipt.
+    await waitForNoChildren(host.pid as number, 30_000)
+    expect(isAlive(firstWorker.pid)).toBe(false)
+
+    const follow = mux.open('session/follow', {
+      request: {
+        address: { kind: 'session', sessionId },
+        assistantStream: true,
+        maxMessages: 100,
+      },
+    })
+    const prompted = await rpc('session/prompt', {
+      request: {
+        requestId: `request-${sessionId}-upload`,
+        sessionId,
+        mode: 'queue',
+        content: [
+          { type: 'file', receiptId: receipt.receiptId },
+          { type: 'text', text: 'use the uploaded file' },
+        ],
+      },
+    })
+    expect(prompted.ok, JSON.stringify(prompted)).toBe(true)
+
+    const secondWorker = await waitForSingleWorker(host.pid as number)
+    expect(secondWorker.pid).not.toBe(firstWorker.pid)
+
+    // The worker admitted the file into the durable user message, which proves
+    // it resolved the receipt the Host wrote before worker A exited.
+    expect(await waitForUserFile(follow, receipt.file.attachmentId)).toBe(true)
+    await rpc('session/cancel', { request: { sessionId } })
+  }, 600_000)
+
   it('keeps the browser stream across idle exits and resumes with correct state', async () => {
     // The approval case leaves its own worker until the idle timer reclaims it.
     await waitForNoChildren(host.pid as number, UI_TIMEOUT_MS)
@@ -285,6 +342,16 @@ async function collectTurn(reader: StreamReader): Promise<{ readonly assistant: 
     }
   }
   throw new Error('turn did not finish before the deadline')
+}
+
+async function waitForUserFile(reader: StreamReader, attachmentId: string): Promise<boolean> {
+  const deadline = Date.now() + UI_TIMEOUT_MS
+  while (Date.now() < deadline) {
+    const frame = await reader.next(deadline - Date.now()) as FollowFrame
+    if (frame.type !== 'event' || frame.event.type !== 'user/message') continue
+    if (JSON.stringify(frame.event.data).includes(attachmentId)) return true
+  }
+  return false
 }
 
 interface WaterfallFrame {

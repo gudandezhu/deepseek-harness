@@ -175,11 +175,6 @@ export class SessionController extends TypertRemoteService {
     installModelSelectionProjection(ctx)
     this.agents = new ApiSessionAgentController(ctx)
     this.commands = new SessionCommandController(ctx, this.agents, process.cwd())
-    ctx.effect(() => ctx.fileUploads.registerAgentResolver(async (sessionId) => {
-      const result = await this.agents.resolveAgent(sessionId)
-      if ('error' in result) throw result.error
-      return result.agent
-    }), 'session-controller: file-upload Agent resolver')
     this.controlState = new SessionControlController(ctx)
     // Registered before history so reverse-order teardown closes every
     // follower before waiting for already-admitted promotions.

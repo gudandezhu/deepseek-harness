@@ -5,7 +5,7 @@
     "outDir": "lib/types",
     "tsBuildInfoFile": "lib/tsconfig.host.tsbuildinfo"
   },
-  "files": ["src/http-route.ts", "src/index.ts", "src/protocol.ts", "src/types.ts"],
+  "files": ["src/http-route.ts", "src/index.ts", "src/protocol.ts", "src/receipt-store.ts", "src/types.ts"],
   "references": [
     { "path": "../../../vendor/cordis" },
     { "path": "../../util/brand" },
@@ -14,6 +14,7 @@
     { "path": "../../attachment/attachment" },
     { "path": "../../interaction/commands" },
     { "path": "../../typert/protocol" },
+    { "path": "../../util/home-paths" },
     { "path": "../connection/tsconfig.host.json" }
   ]
 }

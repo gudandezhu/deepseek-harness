@@ -1,3 +1,6 @@
+import { mkdtemp, rm } from 'node:fs/promises'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
 import { Context } from '@deepseek-ai/cordis'
 import AgentRegistry from '@deepseek-ai/dsh-agent'
 import { createInboxStub } from '@deepseek-ai/dsh-agent-loop-testkit'
@@ -97,7 +100,9 @@ async function uploadHarness(origin?: 'subagent'): Promise<{
     selectionFor: () => selection,
     serializeImageAdmission: <Value>(_agent: Agent, operation: () => Promise<Value>) => operation(),
   } as unknown as ApiSessionAgentController
-  const uploads = new FileUploads(ctx)
+  const receiptRoot = await mkdtemp(join(tmpdir(), 'dsh-file-upload-receipts-'))
+  onTestFinished(() => rm(receiptRoot, { recursive: true, force: true, maxRetries: 10, retryDelay: 50 }))
+  const uploads = new FileUploads(ctx, { receiptRoot })
   if (uploadRoute === undefined) throw new Error('file upload route was not registered')
   return {
     ctx,
@@ -238,36 +243,25 @@ describe('Session file uploads', () => {
     await expect(uploading).rejects.toMatchObject({ code: 'session/not-found' })
   })
 
-  it('resolves a cold ordinary Agent and releases the resolver registration', async () => {
-    const { ctx, uploads, agent, disposeAgent } = await uploadHarness()
+  it('stages a cold stream upload without an Agent and resolves it afterwards', async () => {
+    const { uploads, agent, disposeAgent } = await uploadHarness()
     await disposeAgent()
-    const resolveAgent = vi.fn(async () => {
-      await ctx.agents.register(agent)
-      return agent
-    })
-    const disposeResolver = uploads.registerAgentResolver(resolveAgent)
-    expect(() => { uploads.registerAgentResolver(resolveAgent) }).toThrow('already registered')
-    await expect(uploads.uploadStream({
+    const receipt = await uploads.uploadStream({
       sessionId: SESSION,
       data: (async function* (): AsyncIterable<Uint8Array> { yield Uint8Array.of(1) })(),
-    })).resolves.toMatchObject({ file: { bytes: 1 } })
-    expect(resolveAgent).toHaveBeenCalledWith(SESSION)
-    disposeResolver()
-    const replacement = vi.fn(async () => agent)
-    const disposeReplacement = uploads.registerAgentResolver(replacement)
-    disposeResolver()
-    expect(() => { uploads.registerAgentResolver(replacement) }).toThrow('already registered')
-    expect(disposeReplacement).toBeTypeOf('function')
-    disposeReplacement()
+    })
+    expect(receipt.file.bytes).toBe(1)
+    expect(uploads.resolve(agent, receipt.receiptId)).toEqual(receipt.file)
   })
 
-  it('rejects a cold upload when no Agent resolver is registered', async () => {
-    const { uploads, disposeAgent } = await uploadHarness()
+  it('stages a stream upload for a Session whose Agent never attached here', async () => {
+    const { uploads, agent, disposeAgent } = await uploadHarness()
     await disposeAgent()
     await expect(uploads.uploadStream({
       sessionId: SESSION,
       data: (async function* (): AsyncIterable<Uint8Array> {})(),
-    })).rejects.toMatchObject({ code: 'session/not-found' })
+    })).resolves.toMatchObject({ file: { bytes: 0 } })
+    expect(agent.id).toBe(SESSION)
   })
 
   it('rejects subagent uploads before storing bytes', async () => {
@@ -283,7 +277,7 @@ describe('Session file uploads', () => {
     expect(child.saveFile).not.toHaveBeenCalled()
   })
 
-  it('isolates receipts by Session object even when Session ids match', async () => {
+  it('keeps receipts per Session id across distinct Session objects', async () => {
     const owner = await uploadHarness()
     const other = await uploadHarness()
     expect(other.agent.session.id).toBe(owner.agent.session.id)
@@ -292,12 +286,11 @@ describe('Session file uploads', () => {
     const binding = owner.uploads.bindPrompt(owner.agent, [receipt.receiptId], 'owner-prompt')
     binding.commit()
 
-    expect(owner.uploads.resolve(other.agent, receipt.receiptId)).toBeUndefined()
-    expect(() => owner.uploads.bindPrompt(other.agent, [receipt.receiptId], 'other-prompt'))
-      .toThrow(expect.objectContaining({ code: 'session/attachment-invalid', details: { reason: 'FILE_NOT_STAGED' } }))
+    // Any Session object with the owning id resolves the durable receipt; a
+    // separate Host process with its own cache root does not.
+    expect(owner.uploads.resolve(other.agent, receipt.receiptId)).toEqual(receipt.file)
+    expect(other.uploads.resolve(other.agent, receipt.receiptId)).toBeUndefined()
     owner.uploads.retirePrompt(other.agent, 'owner-prompt')
-    expect(owner.uploads.resolve(owner.agent, receipt.receiptId)).toEqual(receipt.file)
-    owner.uploads.retirePrompt(owner.agent, 'owner-prompt')
     expect(owner.uploads.resolve(owner.agent, receipt.receiptId)).toBeUndefined()
   })
 
@@ -313,7 +306,7 @@ describe('Session file uploads', () => {
     expect(uploads.resolve(agent, receipt.receiptId)).toBeUndefined()
   })
 
-  it('retires observed prompt receipts and drops staged state with the Session', async () => {
+  it('retires observed prompt receipts and keeps unaccepted receipts across Session disposal', async () => {
     const first = await uploadHarness()
     const observed = await first.uploads.upload(
       first.agent,
@@ -342,7 +335,9 @@ describe('Session file uploads', () => {
       new AbortController().signal,
     )
     second.ctx.emit('session/disposed', second.agent.session)
-    expect(second.uploads.resolve(second.agent, abandoned.receiptId)).toBeUndefined()
+    // Disposal drops only the hot copy; the receipt stays in the Session
+    // document for the next worker generation.
+    expect(second.uploads.resolve(second.agent, abandoned.receiptId)).toEqual(abandoned.file)
   })
 
   it('deduplicates a retried rpcId already present in the Agent inbox', async () => {
