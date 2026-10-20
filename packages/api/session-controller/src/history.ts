@@ -147,7 +147,6 @@ export class SessionHistoryController {
       | { readonly type: 'generation' }
     const buffered = new Deque<LiveItem>()
     const waker = createWaker()
-    let closed = false
     const dispose = lives.observe({
       event: (sessionId, event) => {
         if (sessionId !== target) return
@@ -166,32 +165,38 @@ export class SessionHistoryController {
         waker.notify()
       },
     })
-    const onAbort = (): void => {
-      closed = true
-      waker.notify()
-    }
+    const onAbort = (): void => { waker.notify() }
     signal.addEventListener('abort', onAbort, { once: true })
     try {
       let view = lives.view(target)
-      while (view === undefined && !signal.aborted) {
-        // A worker that never published a baseline and no longer exists has
-        // nothing live to observe; the durable path owns the answer.
-        if (!lives.workerAvailable(target)) {
-          dispose()
-          signal.removeEventListener('abort', onAbort)
-          closed = true
-          yield* this.followCold(request, signal)
-          return
+      let delivered: number | undefined
+      if (view === undefined && !lives.workerAvailable(target)) {
+        // Durable history is available now, but a worker may attach later on
+        // this same stream — opening an idle Session and then prompting is the
+        // common case. Serve the cold opening window and keep observing live
+        // state, so the first worker generation replaces it with a reset
+        // instead of the stream going silent on the cold path.
+        const opened = await this.coldSnapshot(request, signal)
+        try {
+          signal.throwIfAborted()
+          yield opened.frame
+          delivered = opened.cursor
+        } finally {
+          opened.source[Symbol.dispose]()
         }
+      }
+      while (view === undefined && !signal.aborted) {
         await waker.wait()
         buffered.popFront()
         view = lives.view(target)
       }
-      if (view === undefined) return
-      signal.throwIfAborted()
-      yield snapshotFrame(view, request)
-      let delivered = view.cursor
-      while (!closed && !signal.aborted) {
+      if (delivered === undefined) {
+        if (view === undefined) return
+        signal.throwIfAborted()
+        yield snapshotFrame(view, request)
+        delivered = view.cursor
+      }
+      while (!signal.aborted) {
         const item = buffered.popFront()
         if (item === undefined) {
           await waker.wait()
@@ -229,7 +234,6 @@ export class SessionHistoryController {
         }
       }
     } finally {
-      closed = true
       dispose()
       signal.removeEventListener('abort', onAbort)
     }
@@ -288,31 +292,17 @@ export class SessionHistoryController {
     const onAbort = (): void => { waker.notify() }
     signal.addEventListener('abort', onAbort, { once: true })
     try {
-      using source = await this.sourceFor(address, signal, true)
-      const events = source.events
-      signal.throwIfAborted()
-      const cursor = source.cursor
+      const opened = await this.coldSnapshot(request, signal)
+      using source = opened.source
+      const cursor = opened.cursor
       snapshotCursor = cursor
-      const page = paginate(events, undefined, request.maxMessages ?? DEFAULT_MAX_MESSAGES, cursor, request.turnWindow)
-      const assistantStream = request.assistantStream === true
-        ? this.assistantStreams.get(target)?.snapshot() ?? { revision: 0 }
-        : undefined
+      signal.throwIfAborted()
       // The accumulator snapshot and this watermark are synchronous. Frames
       // through the cut are represented or superseded by that baseline,
       // including larger revisions from a retired Agent; later revision
       // resets reach Client continuity validation.
       const assistantStreamOrdinalCut = assistantStreamOrdinal
-      yield {
-        type: 'snapshot',
-        header: wireHeader(source.header),
-        cursor,
-        records: pageRecords(page.events),
-        hasMore: page.hasMore,
-        projections: source.projections === undefined
-          ? { asOfSeq: cursor, values: {} }
-          : projectionBlock(source.projections),
-        ...assistantStream === undefined ? {} : { assistantStream },
-      }
+      yield opened.frame
       // A host that keeps live state owns Agent placement: opening a Session
       // must not activate an Agent in this process.
       if (address.kind === 'session' && source.source === 'prepared'
@@ -352,6 +342,51 @@ export class SessionHistoryController {
       disposeCreated()
       disposeEvent()
       disposeAssistantStream?.()
+    }
+  }
+
+  /**
+   * Read one durable opening window without subscribing to Host live events.
+   * @param request - durable address and window bounds.
+   * @param signal - cancellation for persistence reads.
+   * @returns the retained observation, its cursor, and the snapshot frame.
+   */
+  private async coldSnapshot(request: SessionFollowRequest, signal: AbortSignal): Promise<{
+    readonly source: SessionObservation
+    readonly cursor: SessionSeqCursor
+    readonly frame: Extract<SessionFollowFrame, { readonly type: 'snapshot' }>
+  }> {
+    const source = await this.sourceFor(request.address, signal, true)
+    try {
+      const cursor = source.cursor
+      const page = paginate(
+        source.events,
+        undefined,
+        request.maxMessages ?? DEFAULT_MAX_MESSAGES,
+        cursor,
+        request.turnWindow,
+      )
+      const assistantStream = request.assistantStream === true
+        ? this.assistantStreams.get(addressId(request.address))?.snapshot() ?? { revision: 0 }
+        : undefined
+      return {
+        source,
+        cursor,
+        frame: {
+          type: 'snapshot',
+          header: wireHeader(source.header),
+          cursor,
+          records: pageRecords(page.events),
+          hasMore: page.hasMore,
+          projections: source.projections === undefined
+            ? { asOfSeq: cursor, values: {} }
+            : projectionBlock(source.projections),
+          ...assistantStream === undefined ? {} : { assistantStream },
+        },
+      }
+    } catch (error: unknown) {
+      source[Symbol.dispose]()
+      throw error
     }
   }
 
