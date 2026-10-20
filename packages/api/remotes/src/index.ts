@@ -76,8 +76,15 @@ function remoteEventSource(ctx: Context): TypertRemoteEventSource {
         )
       }) as never)
     })
+    // Worker-emitted notifications and waterfalls join the same Client stream
+    // as local events. The relay is optional: the worker process itself mounts
+    // this assembly without one.
+    const disposeRelay = ctx.get('sessionWorkerEventRelay')?.onEvent((dispatch) => {
+      queue.push(dispatch)
+    })
     return queue.iterate(signal, () => {
       for (const dispose of disposers) dispose()
+      disposeRelay?.()
     })
   }
 }

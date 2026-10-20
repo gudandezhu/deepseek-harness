@@ -314,6 +314,7 @@ function pendingInvocation(
   signal?: AbortSignal,
   prompt = 'ship',
   identity: unknown = agentId('agent-1'),
+  lifetime?: AbortSignal,
 ): PendingInvocationProbe {
   const subject = { ctx: context }
   const settled = Promise.withResolvers<TypertRemoteEventOutcome>()
@@ -327,7 +328,12 @@ function pendingInvocation(
     dispatch: {
       event: 'fixture/approval',
       request: { prompt, agent: subject, ...(signal === undefined ? {} : { signal }) },
-      context: { value: context, subject, agentId: identity as string },
+      context: {
+        value: context,
+        subject,
+        agentId: identity as string,
+        ...lifetime === undefined ? {} : { lifetime },
+      },
       resolve,
       reject,
     },
@@ -1184,6 +1190,36 @@ describe('Typert Remote streams', () => {
     await vi.waitFor(() => {
       expect(client.frames).toContainEqual({ type: 'end', streamId: client.streamId })
     })
+    client.socket.close()
+  })
+
+  it('cancels a pending waterfall when its context lifetime aborts', async () => {
+    const { ctx } = await setup(true)
+    const agent = ctx.extend()
+    const lifetime = new AbortController()
+    const pending = pendingInvocation(agent, undefined, 'ship', agentId('agent-lifetime'), lifetime.signal)
+    const rejected = expect(pending.outcome).rejects.toThrow('worker exited')
+    const unregister = ctx.typertGateway.registerRemoteEvents(signal => (async function* () {
+      yield pending.dispatch
+      await new Promise<void>((resolve) => {
+        if (signal.aborted) resolve()
+        else signal.addEventListener('abort', () => { resolve() }, { once: true })
+      })
+    })(), REMOTE_HOST)
+    const client = await openEventClient(ctx, 'events-lifetime')
+    await vi.waitFor(() => { expect(deliveredInvocation(client)).toBeDefined() })
+
+    lifetime.abort(new Error('worker exited'))
+    await rejected
+    expect(pending.reject).toHaveBeenCalledTimes(1)
+    await vi.waitFor(() => {
+      expect(client.frames).toContainEqual({
+        type: 'item',
+        streamId: client.streamId,
+        value: { type: 'cancel', eventId: expect.any(String) },
+      })
+    })
+    await unregister()
     client.socket.close()
   })
 

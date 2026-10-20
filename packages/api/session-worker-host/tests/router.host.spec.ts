@@ -27,7 +27,7 @@ function setup(options: { readonly live?: boolean; readonly decision?: { kind: '
   const supervisor = { get, acquire: acquired } as unknown as SessionWorkerSupervisor
   const attach = vi.fn()
   const lives = { attach } as unknown as SessionWorkerLives
-  return { router: new SessionWorkerRouter(ctx, supervisor, lives), call, open, get, acquired, attach }
+  return { router: new SessionWorkerRouter(ctx, supervisor, lives, undefined), call, open, get, acquired, attach }
 }
 
 describe('Session worker host router', () => {

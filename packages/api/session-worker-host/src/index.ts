@@ -25,6 +25,7 @@ import {
   SessionWorkerSupervisor,
 } from '@deepseek-ai/dsh-session-worker-supervisor'
 import { DEFAULT_FORWARDED_ENV, forwardedEnvironment, inheritedPatchArgs, workerCommand } from './command.ts'
+import { SessionWorkerEvents } from './events.ts'
 import { SessionWorkerRouter } from './router.ts'
 
 export {
@@ -34,6 +35,7 @@ export {
   sharedNodeFlags,
   workerCommand,
 } from './command.ts'
+export { SessionWorkerEvents } from './events.ts'
 export { SessionWorkerRouter } from './router.ts'
 
 declare module '@deepseek-ai/dsh-workspace/types' {
@@ -96,6 +98,8 @@ export function apply(ctx: Context, config: Config = {}): void {
   const resolved = resolveConfig(config)
   const lives = new SessionWorkerLives(ctx, resolved.liveEventLimit)
   ctx.provide('sessionWorkerLives', lives)
+  const events = new SessionWorkerEvents(ctx)
+  ctx.provide('sessionWorkerEventRelay', events)
   ctx.plugin(SessionWorkerSupervisor, {
     command: [...resolved.command],
     profile: resolved.profile,
@@ -109,7 +113,7 @@ export function apply(ctx: Context, config: Config = {}): void {
   ctx.inject(['sessionWorkers', 'remoteAccess'], (workerCtx) => {
     const supervisor = workerCtx.get('sessionWorkers')
     if (supervisor === undefined) return
-    const router = new SessionWorkerRouter(workerCtx, supervisor, lives)
+    const router = new SessionWorkerRouter(workerCtx, supervisor, lives, events)
     ctx.provide('sessionWorkerRouter', router)
     // Schedule delivery is an ordinary routed write; publishing the port keeps
     // the Schedule runtime from resolving a second Agent in the Host.

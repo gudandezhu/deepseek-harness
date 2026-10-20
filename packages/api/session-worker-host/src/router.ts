@@ -23,6 +23,7 @@ import type {
 } from '@deepseek-ai/dsh-api-session-controller'
 import type { SessionWorkerHandle, SessionWorkerSupervisor } from '@deepseek-ai/dsh-session-worker-supervisor'
 import type { TypertEndpointRouter } from '@deepseek-ai/dsh-api-gateway'
+import type { SessionWorkerEvents } from './events.ts'
 
 /** One forwarded write endpoint and how to find or mint its Session. */
 interface RoutedWrite {
@@ -105,6 +106,7 @@ export class SessionWorkerRouter implements TypertEndpointRouter, SessionReminde
     private readonly ctx: Context,
     private readonly supervisor: SessionWorkerSupervisor,
     private readonly lives: SessionWorkerLives | undefined,
+    private readonly events: SessionWorkerEvents | undefined,
   ) {}
 
   /** @inheritdoc */
@@ -212,10 +214,16 @@ export class SessionWorkerRouter implements TypertEndpointRouter, SessionReminde
         )
       }
     }
-    if (route.attachAfter !== true) this.lives?.attach(target.sessionId, worker)
+    if (route.attachAfter !== true) this.attach(target.sessionId, worker)
     const result = await worker.call(endpoint, target.args, { signal })
-    if (route.attachAfter === true && result.ok) this.lives?.attach(target.sessionId, worker)
+    if (route.attachAfter === true && result.ok) this.attach(target.sessionId, worker)
     return result
+  }
+
+  /** Bind browser live state and the worker event relay to one generation. */
+  private attach(sessionId: SessionId, worker: SessionWorkerHandle): void {
+    this.lives?.attach(sessionId, worker)
+    this.events?.attach(sessionId, worker)
   }
 
   private denied(
@@ -262,9 +270,8 @@ export class SessionWorkerRouter implements TypertEndpointRouter, SessionReminde
  * @returns an iterable that fails on its first step.
  */
 function failingStream(endpoint: string, reason: string): AsyncIterable<never> {
-  return (async function* (): AsyncGenerator<never> {
-    throw new Error(`remote access: ${endpoint}: access denied (${reason})`)
-  })()
+  const error = new Error(`remote access: ${endpoint}: access denied (${reason})`)
+  return { [Symbol.asyncIterator]: () => ({ next: () => Promise.reject(error) }) }
 }
 
 /** Session Remote methods carry one `request` object holding the identity. */

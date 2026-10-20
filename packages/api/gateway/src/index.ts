@@ -78,6 +78,7 @@ export type {
   TypertRemoteEventFrame,
   TypertRemoteEventInvocation,
   TypertRemoteEventOutcome,
+  TypertRemoteEventRelay,
   TypertRemoteEventSource,
   TypertEndpointRouter,
 } from './types.ts'
@@ -663,7 +664,11 @@ export class TypertGatewayService extends Service implements TypertGateway {
         source.resolve({ kind: 'next' })
         return
       }
-      const signals = new Set(projected.signal === undefined ? [] : [projected.signal])
+      const signals = new Set<AbortSignal>(projected.signal === undefined ? [] : [projected.signal])
+      // A worker lifetime is an additional cancellation source: losing the
+      // process must reject the answer path instead of leaving it pending.
+      const lifetime = source.context.lifetime
+      if (lifetime !== undefined) signals.add(lifetime)
       const abort = (): void => {
         const reason: unknown = [...signals].find(signal => signal.aborted)?.reason
         this.cancelRemoteEvent(pending, reason instanceof Error

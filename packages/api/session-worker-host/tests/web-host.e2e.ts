@@ -7,7 +7,7 @@
  */
 
 import { execFileSync, spawn, type ChildProcess } from 'node:child_process'
-import { mkdtemp, rm } from 'node:fs/promises'
+import { mkdtemp, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -18,6 +18,7 @@ import { startMockLlmServer, type MockLlmServer } from '@deepseek-ai/dsh-llm-moc
 const repositoryRoot = fileURLToPath(new URL('../../../../', import.meta.url))
 const cliEntry = join(repositoryRoot, 'apps/cli/src/bin.ts')
 const MOCK_TEXT = 'mock reply from a session worker'
+const APPROVAL_FILE_TEXT = 'hello from the approval fixture'
 const IDLE_TTL_MS = 1_500
 const UI_TIMEOUT_MS = 180_000
 
@@ -54,15 +55,42 @@ let cookie: string
 let mux: MuxClient
 
 beforeAll(async () => {
-  server = await startMockLlmServer({
-    apiKey: 'mock-key',
-    sequence: ['success'],
-    repeatLast: true,
-    successText: MOCK_TEXT,
-  })
   home = await mkdtemp(join(tmpdir(), 'dsh-session-worker-host-home-'))
   project = await mkdtemp(join(tmpdir(), 'dsh-session-worker-host-project-'))
-  host = spawn(process.execPath, ['--import', 'tsx/esm', cliEntry, 'web', '--no-open', '--port', '0'], {
+  const approvalFile = join(project, 'approval.txt')
+  await writeFile(approvalFile, APPROVAL_FILE_TEXT)
+  // A test-only tool gate: every `read` asks the browser, everything else
+  // keeps the stock decision. It loads in both the Host and the worker because
+  // the Host forwards its `--patch` overlays.
+  const fixture = join(home, 'approval-fixture.mjs')
+  await writeFile(fixture, [
+    "export const name = 'e2e-approval-fixture'",
+    'export function apply(ctx) {',
+    "  ctx.on('tools/pre-execute', async (exec, next) =>",
+    "    exec.name === 'read' ? { kind: 'ask', reason: 'e2e approval' } : next())",
+    '}',
+    '',
+  ].join('\n'))
+  const patch = join(home, 'approval.patch.yml')
+  await writeFile(patch, [
+    '- insert:',
+    '    - id: e2e-approval',
+    `      name: ${JSON.stringify(fixture)}`,
+    '',
+  ].join('\n'))
+  server = await startMockLlmServer({
+    apiKey: 'mock-key',
+    // The first request asks for a tool call; the follow-up request returns text.
+    sequence: ['tool_call_success', 'success'],
+    repeatLast: true,
+    successText: MOCK_TEXT,
+    toolName: 'read',
+    toolArguments: JSON.stringify({ file_path: approvalFile }),
+  })
+  // The launcher accepts `--profile` and `--patch` together; app flags follow.
+  host = spawn(process.execPath, [
+    '--import', 'tsx/esm', cliEntry, '--profile', 'web', '--patch', patch, '--no-open', '--port', '0',
+  ], {
     cwd: repositoryRoot,
     env: {
       ...process.env,
@@ -88,14 +116,66 @@ beforeAll(async () => {
 
 afterAll(async () => {
   mux?.close()
-  host?.kill('SIGTERM')
+  if (host !== undefined && host.exitCode === null && host.signalCode === null) {
+    const exited = new Promise<void>((resolve) => { host.once('exit', () => { resolve() }) })
+    host.kill('SIGTERM')
+    await exited
+  }
   await server?.close()
-  await rm(home, { recursive: true, force: true })
-  await rm(project, { recursive: true, force: true })
+  const retry = { recursive: true, force: true, maxRetries: 10, retryDelay: 100 } as const
+  await rm(home, retry)
+  await rm(project, retry)
 })
 
 describe('web host session workers', () => {
+  it('asks an approval inside the worker, answers in the browser, and continues the tool', async () => {
+    const events = mux.open('$events', {})
+    const ready = await events.next() as { readonly type: 'ready'; readonly clientId: string }
+    expect(ready.type).toBe('ready')
+
+    const created = await rpc('session/create', { request: { cwd: project } })
+    expect(created.ok, JSON.stringify(created)).toBe(true)
+    const sessionId = (created as { ok: true; value: { sessionId: string } }).value.sessionId
+
+    const follow = mux.open('session/follow', {
+      request: {
+        address: { kind: 'session', sessionId },
+        assistantStream: true,
+        maxMessages: 100,
+      },
+    })
+    const snapshot = await follow.next() as FollowSnapshot
+    expect(snapshot.type).toBe('snapshot')
+
+    const prompted = await rpc('session/prompt', {
+      request: {
+        requestId: `request-${sessionId}-approval`,
+        sessionId,
+        mode: 'queue',
+        content: [{ type: 'text', text: 'read the approval file' }],
+      },
+    })
+    expect(prompted.ok, JSON.stringify(prompted)).toBe(true)
+
+    const waterfall = await waitForWaterfall(events)
+    expect(waterfall.event).toBe('approval/request')
+    expect(waterfall.request).toMatchObject({ toolName: 'read' })
+
+    const answered = await rpc('$events/result', {
+      clientId: ready.clientId,
+      eventId: waterfall.eventId,
+      outcome: { kind: 'result', value: 'allowed-once' },
+    })
+    expect(answered.ok, JSON.stringify(answered)).toBe(true)
+
+    const turn = await collectTurn(follow)
+    expect(turn.tools).toContain(APPROVAL_FILE_TEXT)
+    expect(turn.assistant).toContain(MOCK_TEXT)
+  }, 600_000)
+
   it('keeps the browser stream across idle exits and resumes with correct state', async () => {
+    // The approval case leaves its own worker until the idle timer reclaims it.
+    await waitForNoChildren(host.pid as number, UI_TIMEOUT_MS)
     const baselineRss = rssKb(host.pid as number)
 
     const created = await rpc('session/create', { request: { cwd: project } })
@@ -191,16 +271,37 @@ async function rpc(endpoint: string, args: Record<string, unknown>): Promise<Ser
   return envelope.result
 }
 
-async function collectTurn(reader: StreamReader): Promise<{ readonly assistant: string }> {
-  const parts: string[] = []
+async function collectTurn(reader: StreamReader): Promise<{ readonly assistant: string; readonly tools: string }> {
+  const assistant: string[] = []
+  const tools: string[] = []
   const deadline = Date.now() + UI_TIMEOUT_MS
   while (Date.now() < deadline) {
     const frame = await reader.next(deadline - Date.now()) as FollowFrame
     if (frame.type !== 'event') continue
-    if (frame.event.type === 'assistant/message') parts.push(JSON.stringify(frame.event.data))
-    if (frame.event.type === 'turn/end') return { assistant: parts.join('\n') }
+    if (frame.event.type === 'assistant/message') assistant.push(JSON.stringify(frame.event.data))
+    if (frame.event.type === 'tool/result') tools.push(JSON.stringify(frame.event.data))
+    if (frame.event.type === 'turn/end') {
+      return { assistant: assistant.join('\n'), tools: tools.join('\n') }
+    }
   }
   throw new Error('turn did not finish before the deadline')
+}
+
+interface WaterfallFrame {
+  readonly type: 'waterfall'
+  readonly event: string
+  readonly eventId: string
+  readonly agentId: string
+  readonly request: Record<string, unknown>
+}
+
+async function waitForWaterfall(reader: StreamReader): Promise<WaterfallFrame> {
+  const deadline = Date.now() + UI_TIMEOUT_MS
+  while (Date.now() < deadline) {
+    const frame = await reader.next(deadline - Date.now()) as { readonly type: string }
+    if (frame.type === 'waterfall') return frame as WaterfallFrame
+  }
+  throw new Error('no worker waterfall reached the browser before the deadline')
 }
 
 function announcedUrl(child: ChildProcess): Promise<string> {
@@ -344,6 +445,12 @@ class StreamReader {
   }
 }
 
+function rawText(data: RawData): string {
+  if (Array.isArray(data)) return Buffer.concat(data).toString('utf8')
+  if (data instanceof ArrayBuffer) return Buffer.from(data).toString('utf8')
+  return data.toString('utf8')
+}
+
 /** WebSocket mux client that unwraps one logical stream per id. */
 class MuxClient {
   private readonly readers = new Map<string, StreamReader>()
@@ -351,7 +458,7 @@ class MuxClient {
 
   private constructor(private readonly socket: WebSocket) {
     socket.on('message', (data: RawData) => {
-      const message = JSON.parse(data.toString()) as {
+      const message = JSON.parse(rawText(data)) as {
         type: string
         streamId: string
         value?: unknown

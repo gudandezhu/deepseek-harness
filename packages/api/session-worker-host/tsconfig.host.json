@@ -8,6 +8,7 @@
   "files": [
     "src/index.ts",
     "src/command.ts",
+    "src/events.ts",
     "src/router.ts"
   ],
   "references": [
@@ -22,6 +23,9 @@
     },
     {
       "path": "../remote-access/tsconfig.host.json"
+    },
+    {
+      "path": "../remotes/tsconfig.host.json"
     },
     {
       "path": "../session-controller/tsconfig.host.json"

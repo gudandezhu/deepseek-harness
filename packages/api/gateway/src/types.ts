@@ -51,6 +51,26 @@ export interface TypertRemoteEventContext {
   readonly subject: object
   /** Agent identity read directly from the scoped event subject. */
   readonly agentId: string
+  /**
+   * Optional process or worker lifetime. Aborting it cancels the pending
+   * waterfall, so a dead out-of-process Agent cannot leave a browser answer
+   * waiting forever.
+   */
+  readonly lifetime?: AbortSignal
+}
+
+/**
+ * Host port for events produced outside this process. A web Host registers one
+ * for its session workers; the Remote assembly merges these dispatches into
+ * the same Client stream as local events.
+ */
+export interface TypertRemoteEventRelay {
+  /**
+   * Observe out-of-process dispatches.
+   * @param listener - synchronous sink for notifications and waterfalls.
+   * @returns disposer removing exactly this listener.
+   */
+  onEvent(listener: (dispatch: TypertRemoteEventDispatch) => void): () => void
 }
 
 /** Result returned from a Client waterfall, or delegation back to the Host chain. */
@@ -238,5 +258,7 @@ declare module '@deepseek-ai/cordis' {
     typertGateway: TypertGateway
     /** Optional host router that answers endpoints kept outside this process. */
     sessionWorkerRouter?: TypertEndpointRouter
+    /** Optional host relay for events produced by out-of-process Agents. */
+    sessionWorkerEventRelay?: TypertRemoteEventRelay
   }
 }
