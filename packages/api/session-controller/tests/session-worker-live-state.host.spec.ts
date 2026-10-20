@@ -238,4 +238,93 @@ describe('Session worker live state', () => {
     await settle()
     expect(lives.view(sessionId)?.agentAvailable).toBe(false)
   })
+
+  it('bounds the retained event ring while reporting a dropped prefix', async () => {
+    const ctx = hostContext()
+    const lives = new SessionWorkerLives(ctx, 2)
+    const worker = new FakeWorker()
+    lives.attach(sessionId, worker)
+    worker.emit('session/follow', {
+      type: 'snapshot',
+      header: header(),
+      cursor: 2,
+      records: [
+        { type: 'event', event: event(1) },
+        { type: 'event', event: event(2) },
+      ],
+      hasMore: false,
+      projections: { asOfSeq: 2, values: {} },
+      assistantStream: { revision: 0 },
+    })
+    for (let seq = 3; seq <= 6; seq += 1) worker.emit('session/follow', { type: 'event', event: event(seq) })
+    await settle()
+    const view = lives.view(sessionId)
+    expect(view?.events.map(entry => entry.seq)).toEqual([5, 6])
+    expect(view?.hasMore).toBe(true)
+  })
+
+  it('caps projected values per Session and keeps later keys out', async () => {
+    const ctx = hostContext()
+    const lives = new SessionWorkerLives(ctx, 4_096, { projectionLimit: 2 })
+    const worker = new FakeWorker()
+    lives.attach(sessionId, worker)
+    worker.emit('session/follow', {
+      type: 'snapshot',
+      header: header(),
+      cursor: 0,
+      records: [],
+      hasMore: false,
+      projections: { asOfSeq: 0, values: {} },
+      assistantStream: { revision: 0 },
+    })
+    worker.emit('session/control', {
+      type: 'baseline',
+      value: { projections: { [sessionId]: { asOfSeq: 1, values: { a: 1, b: 2, c: 3 } } } },
+    })
+    await settle()
+    expect(lives.view(sessionId)?.projections.values).toEqual({ a: 1, b: 2 })
+
+    worker.emit('session/control', { type: 'projection', sessionId, key: 'd', value: 4, seq: 2 })
+    await settle()
+    expect(lives.view(sessionId)?.projections.values).toEqual({ a: 1, b: 2 })
+  })
+
+  it('evicts a cold Session after its TTL', async () => {
+    vi.useFakeTimers()
+    try {
+      const ctx = hostContext()
+      const lives = new SessionWorkerLives(ctx, 4_096, { coldTtlMs: 1_000 })
+      const worker = new FakeWorker()
+      lives.attach(sessionId, worker)
+      worker.terminate()
+      await settle()
+      expect(lives.has(sessionId)).toBe(true)
+      vi.advanceTimersByTime(1_000)
+      expect(lives.has(sessionId)).toBe(false)
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  it('evicts the least recently touched cold Sessions beyond the cap', async () => {
+    vi.useFakeTimers()
+    try {
+      vi.setSystemTime(1_000)
+      const ctx = hostContext()
+      const lives = new SessionWorkerLives(ctx, 4_096, { coldTtlMs: 0, maxColdSessions: 2 })
+      const ids = ['cold-a', 'cold-b', 'cold-c'] as SessionId[]
+      const workers = ids.map(() => new FakeWorker())
+      ids.forEach((id, index) => { lives.attach(id, workers[index] as FakeWorker) })
+      for (const worker of workers) {
+        vi.setSystemTime(Date.now() + 1)
+        worker.terminate()
+        await settle()
+      }
+      expect(lives.has(ids[0] as SessionId)).toBe(false)
+      expect(lives.has(ids[1] as SessionId)).toBe(true)
+      expect(lives.has(ids[2] as SessionId)).toBe(true)
+    } finally {
+      vi.useRealTimers()
+    }
+  })
 })

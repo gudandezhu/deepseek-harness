@@ -75,10 +75,14 @@ export { ApiSessionNotFound } from './agent.ts'
 export { SessionFileReferences } from './file-references.ts'
 export { SessionSkillCatalog } from './skill-catalog.ts'
 export {
+  DEFAULT_COLD_SESSION_TTL_MS,
   DEFAULT_LIVE_EVENT_LIMIT,
+  DEFAULT_LIVE_PROJECTION_LIMIT,
   DEFAULT_LIVE_WINDOW_MESSAGES,
+  DEFAULT_MAX_COLD_SESSIONS,
   SessionWorkerLives,
 } from './session-worker/live-state.ts'
+export type { SessionWorkerLivesOptions } from './session-worker/live-state.ts'
 export type {
   SessionLiveListeners,
   SessionLiveProjection,

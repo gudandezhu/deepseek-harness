@@ -30,8 +30,27 @@ export const DEFAULT_LIVE_EVENT_LIMIT = 4_096
 /** Default message window the Host asks a worker for when it attaches. */
 export const DEFAULT_LIVE_WINDOW_MESSAGES = 50
 
+/** Default number of projected values retained per Session. */
+export const DEFAULT_LIVE_PROJECTION_LIMIT = 256
+
+/** Default idle time after which a Session with no worker leaves the cache, in milliseconds. */
+export const DEFAULT_COLD_SESSION_TTL_MS = 300_000
+
+/** Default number of cold Sessions retained before the least recently seen is dropped. */
+export const DEFAULT_MAX_COLD_SESSIONS = 64
+
 /** Compaction threshold for the retained event array. */
 const EVENT_COMPACT_THRESHOLD = 1_024
+
+/** Optional memory bounds beyond the retained event count. */
+export interface SessionWorkerLivesOptions {
+  /** Projected values retained per Session; later keys are ignored. */
+  readonly projectionLimit?: number
+  /** Milliseconds a Session with no worker stays cached; `0` keeps it indefinitely. */
+  readonly coldTtlMs?: number
+  /** Cold Sessions retained before the least recently touched is evicted. */
+  readonly maxColdSessions?: number
+}
 
 /** Live worker call surface; structurally satisfied by `SessionWorkerHandle`. */
 export interface SessionWorkerTransport {
@@ -103,6 +122,12 @@ interface LiveSession {
   hasTurn: boolean
   follow: SessionWorkerStreamTransport | undefined
   control: SessionWorkerStreamTransport | undefined
+  /** Last time live content or a worker attachment touched this cache entry. */
+  lastTouchedAt: number
+  /** Evicts this entry after it has stayed cold; cleared by the next attachment. */
+  coldTimer: NodeJS.Timeout | undefined
+  /** Whether the projection cap diagnostic was already reported. */
+  projectionWarned: boolean
 }
 
 /**
@@ -114,15 +139,30 @@ interface LiveSession {
 export class SessionWorkerLives {
   private readonly sessions = new Map<SessionId, LiveSession>()
   private readonly listeners = new Set<SessionLiveListeners>()
+  private readonly projectionLimit: number
+  private readonly coldTtlMs: number
+  private readonly maxColdSessions: number
 
   /**
    * @param ctx - host context; used for status publication and diagnostics.
    * @param eventLimit - retained events per Session.
+   * @param options - projection, cold-TTL, and cold-LRU bounds.
    */
   constructor(
     private readonly ctx: Context,
     private readonly eventLimit: number = DEFAULT_LIVE_EVENT_LIMIT,
-  ) {}
+    options: SessionWorkerLivesOptions = {},
+  ) {
+    this.projectionLimit = options.projectionLimit ?? DEFAULT_LIVE_PROJECTION_LIMIT
+    this.coldTtlMs = options.coldTtlMs ?? DEFAULT_COLD_SESSION_TTL_MS
+    this.maxColdSessions = options.maxColdSessions ?? DEFAULT_MAX_COLD_SESSIONS
+    // Every entry owns a timer only while it is cold; disposing the service
+    // must not leave unref'd timers pointing at freed state.
+    ctx.effect(() => () => {
+      for (const state of this.sessions.values()) this.clearColdTimer(state)
+      this.sessions.clear()
+    }, 'session-worker-lives: cold Session timers')
+  }
 
   /**
    * Observe live state updates.
@@ -161,11 +201,16 @@ export class SessionWorkerLives {
         hasTurn: false,
         follow: undefined,
         control: undefined,
+        lastTouchedAt: Date.now(),
+        coldTimer: undefined,
+        projectionWarned: false,
       }
       this.sessions.set(sessionId, state)
     } else if (state.worker === worker) {
       return
     }
+    this.clearColdTimer(state)
+    state.lastTouchedAt = Date.now()
     state.generation += 1
     const generation = state.generation
     // A previous generation's streams belong to a dead or retiring process.
@@ -189,6 +234,10 @@ export class SessionWorkerLives {
       if (state.generation !== generation) return
       state.worker = undefined
       state.running = false
+      state.lastTouchedAt = Date.now()
+      this.clearColdTimer(state)
+      state.coldTimer = this.armColdTimer(sessionId, state)
+      this.enforceColdLimit()
       this.ctx.emit('api-session/status', sessionId, false)
     })
   }
@@ -220,6 +269,7 @@ export class SessionWorkerLives {
   view(sessionId: SessionId): SessionLiveView | undefined {
     const state = this.sessions.get(sessionId)
     if (state?.header === undefined) return undefined
+    state.lastTouchedAt = Date.now()
     return {
       sessionId,
       header: state.header,
@@ -341,9 +391,10 @@ export class SessionWorkerLives {
   }
 
   private applySnapshot(state: LiveSession, frame: Record<string, unknown>): void {
+    state.lastTouchedAt = Date.now()
     const records = Array.isArray(frame['records']) ? frame['records'] as SessionHistoryRecord[] : []
     const events = records.map(record => record.event as unknown as SessionEvent)
-    state.header = frame['header'] as unknown as SessionHeader
+    state.header = frame['header'] as SessionHeader
     state.events = events
     state.head = 0
     state.baseSeq = events[0]?.seq ?? 0
@@ -373,6 +424,7 @@ export class SessionWorkerLives {
       )
       return
     }
+    state.lastTouchedAt = Date.now()
     state.events.push(event)
     state.lastSeq = event.seq
     if (state.events.length - state.head > this.eventLimit) {
@@ -398,6 +450,7 @@ export class SessionWorkerLives {
   }
 
   private appendAssistant(state: LiveSession, frame: SessionAssistantStreamFrame): void {
+    state.lastTouchedAt = Date.now()
     if (frame.type === 'start') {
       state.assistant.accept({
         type: 'start',
@@ -435,13 +488,14 @@ export class SessionWorkerLives {
         if (!this.current(state, generation)) return
         if (!isRecord(item)) continue
         if (item['type'] === 'baseline') {
+          state.lastTouchedAt = Date.now()
           const value = item['value']
           if (!isRecord(value) || !isRecord(value['projections'])) continue
           const block = value['projections'][state.sessionId]
           if (!isRecord(block) || typeof block['asOfSeq'] !== 'number' || !isRecord(block['values'])) continue
           state.projections = {
             asOfSeq: block['asOfSeq'],
-            values: block['values'] as Record<string, JsonValue>,
+            values: this.boundedProjections(state, block['values'] as Record<string, JsonValue>),
           }
           for (const [key, entry] of Object.entries(state.projections.values)) {
             this.publishProjection(state.sessionId, key, entry as JsonValue, state.projections.asOfSeq)
@@ -449,8 +503,15 @@ export class SessionWorkerLives {
           continue
         }
         if (item['type'] !== 'projection' || item['sessionId'] !== state.sessionId) continue
+        state.lastTouchedAt = Date.now()
         const seq = item['seq']
         if (typeof seq !== 'number' || typeof item['key'] !== 'string') continue
+        const key = item['key']
+        if (!(key in state.projections.values)
+          && Object.keys(state.projections.values).length >= this.projectionLimit) {
+          this.warnProjectionLimit(state)
+          continue
+        }
         state.projections = {
           asOfSeq: seq,
           values: { ...state.projections.values, [item['key']]: item['value'] as JsonValue },
@@ -466,6 +527,61 @@ export class SessionWorkerLives {
 
   private publishProjection(sessionId: SessionId, key: string, value: JsonValue, seq: number): void {
     for (const listener of this.listeners) listener.projection({ sessionId, key, value, seq })
+  }
+
+  private boundedProjections(
+    state: LiveSession,
+    values: Record<string, JsonValue>,
+  ): Record<string, JsonValue> {
+    const entries = Object.entries(values)
+    if (entries.length <= this.projectionLimit) return values
+    this.warnProjectionLimit(state)
+    return Object.fromEntries(entries.slice(0, this.projectionLimit))
+  }
+
+  private warnProjectionLimit(state: LiveSession): void {
+    if (state.projectionWarned) return
+    state.projectionWarned = true
+    this.ctx.logger.warn(
+      `session-worker: projection cache for "${state.sessionId}" reached ${String(this.projectionLimit)} keys; later keys are dropped`,
+    )
+  }
+
+  private armColdTimer(sessionId: SessionId, state: LiveSession): NodeJS.Timeout | undefined {
+    if (this.coldTtlMs <= 0) return undefined
+    const timer = setTimeout(() => {
+      state.coldTimer = undefined
+      if (state.worker !== undefined || this.sessions.get(sessionId) !== state) return
+      this.evict(sessionId, state)
+    }, this.coldTtlMs)
+    timer.unref()
+    return timer
+  }
+
+  private clearColdTimer(state: LiveSession): void {
+    if (state.coldTimer === undefined) return
+    clearTimeout(state.coldTimer)
+    state.coldTimer = undefined
+  }
+
+  /** Drop the least recently touched cold entries beyond the configured count. */
+  private enforceColdLimit(): void {
+    const cold = [...this.sessions.entries()].filter(([, state]) => state.worker === undefined)
+    const excess = cold.length - this.maxColdSessions
+    if (excess <= 0) return
+    cold.sort((left, right) => left[1].lastTouchedAt - right[1].lastTouchedAt)
+    for (const [sessionId, state] of cold.slice(0, excess)) this.evict(sessionId, state)
+  }
+
+  private evict(sessionId: SessionId, state: LiveSession): void {
+    this.clearColdTimer(state)
+    void state.follow?.cancel('live state evicted')
+    void state.control?.cancel('live state evicted')
+    state.follow = undefined
+    state.control = undefined
+    state.events = []
+    state.projections = { asOfSeq: -1, values: {} }
+    if (this.sessions.get(sessionId) === state) this.sessions.delete(sessionId)
   }
 
   private current(state: LiveSession, generation: number): boolean {

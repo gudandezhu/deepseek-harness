@@ -14,7 +14,10 @@ import type {} from '@deepseek-ai/dsh-workspace'
 import type {} from '@deepseek-ai/dsh-workspace/types'
 import z from '@deepseek-ai/schemastery'
 import {
+  DEFAULT_COLD_SESSION_TTL_MS,
   DEFAULT_LIVE_EVENT_LIMIT,
+  DEFAULT_LIVE_PROJECTION_LIMIT,
+  DEFAULT_MAX_COLD_SESSIONS,
   SessionWorkerLives,
 } from '@deepseek-ai/dsh-api-session-controller'
 import {
@@ -73,6 +76,12 @@ export interface Config {
   readonly graceMs?: number
   /** Retained live events per Session. */
   readonly liveEventLimit?: number
+  /** Retained projection values per Session. */
+  readonly projectionLimit?: number
+  /** Milliseconds a Session with no worker stays cached; `0` keeps it. */
+  readonly coldSessionTtlMs?: number
+  /** Cold Sessions retained before the least recently touched is evicted. */
+  readonly maxColdSessions?: number
 }
 
 /** Cordis plugin configuration schema. */
@@ -87,6 +96,9 @@ export const Config: z<Config> = z.object({
   shutdownTimeoutMs: z.natural().min(1).default(DEFAULT_SHUTDOWN_TIMEOUT_MS),
   graceMs: z.natural().min(1),
   liveEventLimit: z.natural().min(1).default(DEFAULT_LIVE_EVENT_LIMIT),
+  projectionLimit: z.natural().min(1).default(DEFAULT_LIVE_PROJECTION_LIMIT),
+  coldSessionTtlMs: z.natural().min(0).default(DEFAULT_COLD_SESSION_TTL_MS),
+  maxColdSessions: z.natural().min(0).default(DEFAULT_MAX_COLD_SESSIONS),
 })
 
 /**
@@ -96,7 +108,11 @@ export const Config: z<Config> = z.object({
  */
 export function apply(ctx: Context, config: Config = {}): void {
   const resolved = resolveConfig(config)
-  const lives = new SessionWorkerLives(ctx, resolved.liveEventLimit)
+  const lives = new SessionWorkerLives(ctx, resolved.liveEventLimit, {
+    projectionLimit: resolved.projectionLimit,
+    coldTtlMs: resolved.coldSessionTtlMs,
+    maxColdSessions: resolved.maxColdSessions,
+  })
   ctx.provide('sessionWorkerLives', lives)
   const events = new SessionWorkerEvents(ctx)
   ctx.provide('sessionWorkerEventRelay', events)
@@ -144,6 +160,9 @@ interface ResolvedConfig {
   readonly shutdownTimeoutMs: number
   readonly graceMs: number
   readonly liveEventLimit: number
+  readonly projectionLimit: number
+  readonly coldSessionTtlMs: number
+  readonly maxColdSessions: number
 }
 
 function resolveConfig(config: Config): ResolvedConfig {
@@ -170,6 +189,9 @@ function resolveConfig(config: Config): ResolvedConfig {
     shutdownTimeoutMs: config.shutdownTimeoutMs ?? DEFAULT_SHUTDOWN_TIMEOUT_MS,
     graceMs: config.graceMs ?? DEFAULT_SHUTDOWN_TIMEOUT_MS,
     liveEventLimit: config.liveEventLimit ?? DEFAULT_LIVE_EVENT_LIMIT,
+    projectionLimit: config.projectionLimit ?? DEFAULT_LIVE_PROJECTION_LIMIT,
+    coldSessionTtlMs: config.coldSessionTtlMs ?? DEFAULT_COLD_SESSION_TTL_MS,
+    maxColdSessions: config.maxColdSessions ?? DEFAULT_MAX_COLD_SESSIONS,
   }
 }
 
