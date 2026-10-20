@@ -21,3 +21,15 @@ dev-desktop:
 # Build, then launch Desktop.
 build-desktop:
     {{pnpm}} run dev:desktop
+
+# Start the vendored Tauri desktop: Vite plus the Tauri dev window.
+dev-tauri:
+    cd desktop-tauri && {{pnpm}} tauri dev
+
+# Build the vendored Tauri desktop as an unsigned debug app.
+build-tauri:
+    cd desktop-tauri && {{pnpm}} tauri build --debug
+
+# Forward any command to the vendored Tauri CLI.
+tauri *ARGS:
+    cd desktop-tauri && {{pnpm}} tauri {{ARGS}}
