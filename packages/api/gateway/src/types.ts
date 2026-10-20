@@ -4,6 +4,7 @@
  */
 
 import type { Context } from '@deepseek-ai/cordis'
+import type { ConnectionRpcResult } from '@deepseek-ai/dsh-client-connection'
 import type { PeerScope, RemoteUplinkWindow, TypertResourceReader } from '@deepseek-ai/dsh-typert-protocol'
 import type { RemoteEventHostInfo } from './stream-protocol.ts'
 
@@ -182,9 +183,60 @@ export interface TypertGateway {
   stream(request: InvokeRemoteRequest): Promise<AsyncIterable<unknown>>
 }
 
+/**
+ * Host-owned endpoint router consulted before Typert descriptor resolution.
+ *
+ * A deployment that keeps some endpoints outside this process registers one
+ * under `ctx.sessionWorkerRouter`; the Gateway offers every unary call and
+ * logical stream to it before resolving a descriptor or a Service lookup.
+ */
+export interface TypertEndpointRouter {
+  /**
+   * Report whether this router answers an endpoint, so the owning process does
+   * not need a local Service registering it.
+   * @param endpoint - canonical `namespace/method` endpoint.
+   * @returns true when {@link dispatch} or {@link stream} owns the endpoint.
+   */
+  claims?(endpoint: string): boolean
+
+  /**
+   * Handle one unary endpoint before descriptor resolution.
+   * @param endpoint - canonical `namespace/method` endpoint.
+   * @param payload - complete wire payload, normally `{ args }`.
+   * @param signal - carrier cancellation.
+   * @param peer - caller the result speaks for.
+   * @returns the result, or undefined when this router does not own the endpoint.
+   */
+  dispatch?(
+    endpoint: string,
+    payload: unknown,
+    signal: AbortSignal,
+    peer: PeerScope,
+  ): Promise<ConnectionRpcResult<unknown>> | undefined
+
+  /**
+   * Handle one stream endpoint before descriptor resolution.
+   * @param endpoint - canonical `namespace/method` endpoint.
+   * @param payload - complete wire payload, normally `{ args }`.
+   * @param uplink - carrier uplink items.
+   * @param signal - carrier cancellation.
+   * @param peer - caller the stream speaks for.
+   * @returns the business stream, or undefined when this router does not own the endpoint.
+   */
+  stream?(
+    endpoint: string,
+    payload: unknown,
+    uplink: AsyncIterable<unknown>,
+    signal: AbortSignal,
+    peer: PeerScope,
+  ): AsyncIterable<unknown> | undefined
+}
+
 declare module '@deepseek-ai/cordis' {
   interface Context {
     /** Host dispatcher for Typert Remote calls. */
     typertGateway: TypertGateway
+    /** Optional host router that answers endpoints kept outside this process. */
+    sessionWorkerRouter?: TypertEndpointRouter
   }
 }

@@ -362,6 +362,7 @@ export class TypertGatewayService extends Service implements TypertGateway {
 
   private claimsEndpoint(endpoint: string): boolean {
     if (endpoint === REMOTE_EVENT_RESULT_ENDPOINT) return true
+    if (this.ctx.get('sessionWorkerRouter')?.claims?.(endpoint) === true) return true
     const segments = endpoint.split('/')
     if (segments.length !== 2 || segments[0] === '' || segments[1] === '') return false
     if (this.ctx.typert.local.get(endpoint) !== undefined || this.ctx.typert.local.hasSeen(endpoint)) return true
@@ -477,6 +478,17 @@ export class TypertGatewayService extends Service implements TypertGateway {
     signal: AbortSignal,
     peer: PeerScope,
   ): Promise<ConnectionRpcResult> {
+    // The router runs before descriptor resolution and Service lookups so a
+    // routed endpoint never activates local Agent or Session state.
+    const router = this.ctx.get('sessionWorkerRouter')
+    if (router?.dispatch !== undefined) {
+      try {
+        const routed = router.dispatch(endpoint, payload, signal, peer)
+        if (routed !== undefined) return await routed
+      } catch (error) {
+        return rpcFailure(error)
+      }
+    }
     if (endpoint === REMOTE_EVENT_RESULT_ENDPOINT) {
       try {
         assertPeerLive(peer, endpoint)
@@ -514,6 +526,10 @@ export class TypertGatewayService extends Service implements TypertGateway {
     control: AbortController,
     uplinkWindow?: RemoteInvocation['uplinkWindow'],
   ): Promise<AsyncIterable<unknown>> {
+    // Streams route before descriptor resolution for the same reason as unary
+    // calls: opening one must not activate a local Agent.
+    const routed = this.ctx.get('sessionWorkerRouter')?.stream?.(endpoint, payload, uplink, signal, peer)
+    if (routed !== undefined) return routed
     if (endpoint === REMOTE_EVENT_STREAM_ENDPOINT) {
       // A Gateway-owned stream reads no uplink: releasing it now keeps its items out of the bounded inbox.
       releaseUplink(uplink)
