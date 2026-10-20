@@ -1,0 +1,52 @@
+# The session-worker bundle: the per-session Agent process over dsh-base.
+# It mounts the complete Session Controller, jobs, file upload, workspace
+# registry, and forwarded Remote event source, but no Web server, browser
+# roster, or client transport. The bridge owns the inherited fd 7 control
+# channel that the host supervisor speaks.
+
+- id: system-prompt
+  config:
+    personaPrefix: >-
+      You are a coding agent powered by the {{model}} model.
+
+# Session titles issue an auxiliary model request. The worker must not hold a
+# process open for decorative work after its last turn settles.
+- id: session-title-llm
+  disabled: true
+
+- id: hmr
+  disabled: true
+
+- insert:
+    # Connection provides the in-process Peer, the shared `/api` Fetch handler,
+    # and the interceptor Gateway uses for unary dispatch. No webserver row is
+    # mounted, so it binds no port and registers no HTTP route.
+    - id: connection
+      name: '@deepseek-ai/dsh-client-connection'
+
+    # The Session Controller requires the workspace registry for create, scope
+    # resolution, and archived-session admission. The registry is durable state,
+    # not a Host write surface.
+    - id: workspace
+      name: '@deepseek-ai/dsh-workspace'
+
+    - id: session-controller
+      name: '@deepseek-ai/dsh-api-session-controller'
+
+    - id: job-controller
+      name: '@deepseek-ai/dsh-api-job-controller'
+
+    - id: workspace-files
+      name: '@deepseek-ai/dsh-api-workspace-files'
+
+    - id: file-upload
+      name: '@deepseek-ai/dsh-client-file-upload'
+
+    - id: api-remotes
+      name: '@deepseek-ai/dsh-api-remotes'
+
+    - id: session-worker-bridge
+      name: '@deepseek-ai/dsh-session-worker-bridge'
+      config:
+        idleQuietMs: 1000
+        idlePollMs: 250
