@@ -109,7 +109,11 @@ export function apply(ctx: Context, config: Config = {}): void {
   ctx.inject(['sessionWorkers', 'remoteAccess'], (workerCtx) => {
     const supervisor = workerCtx.get('sessionWorkers')
     if (supervisor === undefined) return
-    ctx.provide('sessionWorkerRouter', new SessionWorkerRouter(workerCtx, supervisor, lives))
+    const router = new SessionWorkerRouter(workerCtx, supervisor, lives)
+    ctx.provide('sessionWorkerRouter', router)
+    // Schedule delivery is an ordinary routed write; publishing the port keeps
+    // the Schedule runtime from resolving a second Agent in the Host.
+    ctx.provide('sessionReminderDelivery', router)
   })
   // Archive admission lives with the Workspace registry: report a running
   // worker turn so an archive without `stopActivity` is refused, and stop the

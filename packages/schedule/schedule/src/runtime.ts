@@ -1,12 +1,14 @@
 /** Host timer over stored tasks; Session activation is a delivery operation. */
 import { createUserMessage } from '@deepseek-ai/dsh-llm'
 import type { ContextFormed } from '@deepseek-ai/dsh-llm'
+import type { MessageId } from '@deepseek-ai/dsh-llm/brand'
 declare module '@deepseek-ai/dsh-llm' {
   interface MessageSourceMap {
     'schedule': { kind: 'schedule' } & ContextFormed
   }
 }
 import type { Context } from '@deepseek-ai/cordis'
+import type { SessionId } from '@deepseek-ai/dsh-session'
 import type {} from '@deepseek-ai/dsh-api-session-controller'
 import { isRecurringScheduleRecord, renderReminderFraming, renderRecurringReminderBatchFraming, resolveRecurringOccurrence } from './domain.ts'
 import type { DeliveryRetentionBounds, RecurringScheduleRecord } from './types.ts'
@@ -15,6 +17,27 @@ import { appendDelivery } from './delivery-history.ts'
 
 /** Largest delay Node timers represent without clamping. */
 export const MAX_TIMER_DELAY_MS = 2_147_483_647
+
+/**
+ * Host port that delivers reminder text to whichever process owns the Session
+ * Agent. When absent (direct runtime construction in tests), the runtime keeps
+ * the in-process resolve/follow-up/flush path.
+ */
+export interface ScheduleDeliveryPort {
+  /**
+   * Report whether the deploying Host can route delivery outside this process
+   * right now. A false result keeps the runtime's in-process path unchanged.
+   * @returns true when {@link deliver} owns Agent activation.
+   */
+  routes(): boolean
+
+  /**
+   * @param sessionId - Session whose Agent receives the reminder.
+   * @param text - complete model-visible reminder text.
+   * @returns the durable message identity to record in delivery history.
+   */
+  deliver(sessionId: SessionId, text: string): Promise<{ readonly messageId: MessageId }>
+}
 
 /** Owns at most one timer across recomputations; delivery and management share the serialized operation. */
 export class ScheduleRuntime {
@@ -35,6 +58,7 @@ export class ScheduleRuntime {
     private readonly transact: (work: () => Promise<void>) => Promise<void>,
     private readonly commit: (task: ScheduleTask) => Promise<void>,
     private readonly retention: DeliveryRetentionBounds,
+    private readonly delivery?: ScheduleDeliveryPort,
   ) {}
 
   /**
@@ -98,8 +122,25 @@ export class ScheduleRuntime {
       let admitted = group
       const committed = new Set<ScheduleTask['record']['id']>()
       try {
-        const resolved = await this.ctx.sessionController.resolveAgent(task.sessionId)
-        if ('error' in resolved) throw resolved.error
+        // A routed delivery owns its own Agent activation; the in-process path
+        // still resolves here so restoration and backoff keep their behavior.
+        const routed = this.delivery?.routes() === true
+        let deliverLocally: ((text: string) => Promise<MessageId>) | undefined
+        if (!routed) {
+          const resolved = await this.ctx.sessionController.resolveAgent(task.sessionId)
+          if ('error' in resolved) throw resolved.error
+          const agent = resolved.agent
+          deliverLocally = async (text: string): Promise<MessageId> => {
+            const message = createUserMessage({
+              content: [{ type: 'text', text }], source: { kind: 'schedule' },
+            })
+            agent.followup(message)
+            // followup synchronously appends the inbox splice before flush observes the Session.
+            const flushed = await this.ctx.sessions.flush(agent.session)
+            if (!flushed) throw new Error('Session persistence did not acknowledge the reminder')
+            return message.id
+          }
+        }
         // oxlint-disable-next-line typescript/no-unnecessary-condition -- Disposal can run while Session restoration is awaited.
         if (this.stopping) return
         const now = Date.now()
@@ -116,18 +157,19 @@ export class ScheduleRuntime {
             record: member.record, occurrenceAt: occurrence.occurrenceAt,
           })))
           : renderReminderFraming(task.record)
-        const message = createUserMessage({
-          content: [{ type: 'text', text }], source: { kind: 'schedule' },
-        })
-        // followup synchronously appends the inbox splice before flush observes the Session.
-        resolved.agent.followup(message)
-        const flushed = await this.ctx.sessions.flush(resolved.agent.session)
-        if (!flushed) throw new Error('Session persistence did not acknowledge the reminder')
+        let messageId: MessageId
+        if (routed && this.delivery !== undefined) {
+          messageId = (await this.delivery.deliver(task.sessionId, text)).messageId
+        } else if (deliverLocally !== undefined) {
+          messageId = await deliverLocally(text)
+        } else {
+          throw new Error('schedule: no reminder delivery path is configured')
+        }
         const deliveredAt = new Date(Date.now()).toISOString()
         if (!isRecurringScheduleRecord(task.record)) {
           await this.commit({
             ...task, status: 'inactive',
-            ...appendDelivery(task, { scheduledAt: task.record.scheduledAt, deliveredAt, messageId: message.id }, this.retention),
+            ...appendDelivery(task, { scheduledAt: task.record.scheduledAt, deliveredAt, messageId: messageId }, this.retention),
           })
           committed.add(task.record.id)
         }
@@ -136,7 +178,7 @@ export class ScheduleRuntime {
             ...member,
             record: { ...member.record, scheduledAt: occurrence.nextScheduledAt ?? occurrence.occurrenceAt },
             status: occurrence.nextScheduledAt === undefined ? 'inactive' : 'active',
-            ...appendDelivery(member, { scheduledAt: occurrence.occurrenceAt, deliveredAt, messageId: message.id }, this.retention),
+            ...appendDelivery(member, { scheduledAt: occurrence.occurrenceAt, deliveredAt, messageId: messageId }, this.retention),
           })
           committed.add(member.record.id)
         }

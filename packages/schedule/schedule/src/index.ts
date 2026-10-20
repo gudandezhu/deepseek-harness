@@ -159,7 +159,18 @@ export class ScheduleService extends TypertRemoteService {
           await tasks.put(task.record.id, task)
           this.emitChanged()
         },
-        this.retention)
+        this.retention,
+        // A web Host routes delivery to the worker that owns the Agent. The
+        // port is looked up per delivery because the router is provided by a
+        // sibling plugin whose readiness is not part of this service's deps.
+        {
+          routes: () => this.ctx.get('sessionReminderDelivery') !== undefined,
+          deliver: (sessionId, text) => {
+            const remote = this.ctx.get('sessionReminderDelivery')
+            if (remote === undefined) throw new Error('schedule: routed delivery port disappeared')
+            return remote.deliverReminder(sessionId, text)
+          },
+        })
       this.runtime.requestDrive()
       return cleanup
     })

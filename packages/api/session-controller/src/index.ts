@@ -6,7 +6,7 @@ import type { Agent } from '@deepseek-ai/dsh-agent'
 import type {} from '@deepseek-ai/dsh-fs'
 import { Context } from '@deepseek-ai/cordis'
 import z from '@deepseek-ai/schemastery'
-import { errorChain, ReasoningEffortId, type MessageSource } from '@deepseek-ai/dsh-llm'
+import { createUserMessage, errorChain, ReasoningEffortId, type MessageSource } from '@deepseek-ai/dsh-llm'
 import type {} from '@deepseek-ai/dsh-client-file-upload'
 import { canOpenNativePath, nativeFileManager, nativeFileApplications, openNativeFileApplication, openNativeAssociatedPath, revealNativePath } from '@deepseek-ai/dsh-native-command'
 import type { SessionId } from '@deepseek-ai/dsh-session'
@@ -43,6 +43,8 @@ import type {
   SessionControlFrame,
   SessionCreateRequest,
   SessionCreateValue,
+  SessionDeliverRequest,
+  SessionDeliverValue,
   SessionFollowFrame,
   SessionFollowRequest,
   SessionForkRequest,
@@ -495,6 +497,33 @@ export class SessionController extends TypertRemoteService {
       ...(principal === undefined ? {} : { principal }),
     }
     return this.commands.prompt(request, source)
+  }
+
+  /**
+   * Deliver one rendered Schedule reminder into the Agent that owns the
+   * Session, then flush its log before acknowledging. The Schedule service
+   * renders the text; this endpoint exists so the Host can route the delivery
+   * to a worker without activating a local Agent.
+   * @param request - Session identity and complete model-visible reminder text.
+   * @returns the durable message identity committed by the follow-up.
+   */
+  @Remote('deliverReminder')
+  async deliverReminder(request: SessionDeliverRequest): Promise<SessionDeliverValue> {
+    if (request.text.trim() === '') {
+      throw new RemoteError('gateway/bad-request', 'reminder text must not be blank', {})
+    }
+    const resolved = await this.agents.resolveAgent(request.sessionId)
+    if ('error' in resolved) throw resolved.error
+    const message = createUserMessage({
+      content: [{ type: 'text', text: request.text }],
+      source: { kind: 'schedule' },
+    })
+    resolved.agent.followup(message)
+    const flushed = await this.ctx.sessions.flush(resolved.agent.session)
+    if (!flushed) {
+      throw new RemoteError('gateway/internal', 'Session persistence did not acknowledge the reminder', {})
+    }
+    return { accepted: true, messageId: message.id }
   }
 
   /**

@@ -16,7 +16,11 @@ import type { RemoteAccessAction } from '@deepseek-ai/dsh-api-remote-access'
 import type { ConnectionRpcResult } from '@deepseek-ai/dsh-client-connection'
 import type { SessionId } from '@deepseek-ai/dsh-session'
 import type { PeerScope } from '@deepseek-ai/dsh-typert-protocol'
-import type { SessionWorkerLives } from '@deepseek-ai/dsh-api-session-controller'
+import type {
+  SessionDeliverValue,
+  SessionReminderDelivery,
+  SessionWorkerLives,
+} from '@deepseek-ai/dsh-api-session-controller'
 import type { SessionWorkerHandle, SessionWorkerSupervisor } from '@deepseek-ai/dsh-session-worker-supervisor'
 import type { TypertEndpointRouter } from '@deepseek-ai/dsh-api-gateway'
 
@@ -37,8 +41,14 @@ interface RouteTarget {
   readonly args: Readonly<Record<string, unknown>>
 }
 
+/** Internal deliveries have no caller cancellation to forward. */
+const NO_CANCELLATION = new AbortController().signal
+
 const SESSION_WRITES: Readonly<Record<string, RoutedWrite>> = {
   'session/prompt': requestField('sessionId'),
+  // Schedule delivery must reach the worker that owns the Agent; serving it in
+  // the Host would resume a second Agent and contend for the write lease.
+  'session/deliverReminder': requestField('sessionId'),
   'session/cancel': { ...requestField('sessionId'), spawn: false },
   'session/rename': requestField('sessionId'),
   'session/selectModel': requestField('sessionId'),
@@ -70,7 +80,7 @@ const SESSION_WRITES: Readonly<Record<string, RoutedWrite>> = {
  * A routed call never resolves a Typert descriptor or a local Agent; the
  * worker performs both in its own process.
  */
-export class SessionWorkerRouter implements TypertEndpointRouter {
+export class SessionWorkerRouter implements TypertEndpointRouter, SessionReminderDelivery {
   /**
    * @param ctx - host context carrying remote access and logging.
    * @param supervisor - worker process owner.
@@ -107,6 +117,34 @@ export class SessionWorkerRouter implements TypertEndpointRouter {
     // path owns the canonical "not attached" and "unknown job" failures.
     if (live === undefined && !route.spawn) return undefined
     return this.forward(endpoint, route, target, live, signal)
+  }
+
+  /**
+   * Deliver a Schedule reminder to the worker that owns the Session. This is
+   * the Host port consulted by the Schedule service, so delivery never resumes
+   * a second Agent in the Host process.
+   * @param sessionId - Session whose Agent receives the reminder.
+   * @param text - complete model-visible reminder text.
+   * @param signal - optional cancellation of the local wait.
+   * @returns the durable message identity reported by the worker.
+   */
+  async deliverReminder(
+    sessionId: SessionId,
+    text: string,
+    signal: AbortSignal = NO_CANCELLATION,
+  ): Promise<SessionDeliverValue> {
+    const args = { request: { sessionId, text } }
+    const route = SESSION_WRITES['session/deliverReminder']
+    if (route === undefined) throw new Error('session-worker-host: reminder route is not registered')
+    const result = await this.forward(
+      'session/deliverReminder',
+      route,
+      { sessionId, args },
+      this.supervisor.get(sessionId),
+      signal,
+    )
+    if (!result.ok) throw new Error(result.error.message)
+    return result.value as SessionDeliverValue
   }
 
   private async forward(

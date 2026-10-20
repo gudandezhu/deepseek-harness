@@ -80,6 +80,28 @@ describe('Session worker host router', () => {
     expect(call).toHaveBeenCalledWith('session/fork', { request: { sessionId } }, { signal: expect.anything() })
   })
 
+  it('delivers a Schedule reminder to the worker that owns the Session', async () => {
+    const { router, call, acquired, attach } = setup()
+    expect(router.claims('session/deliverReminder')).toBe(true)
+    await expect(router.deliverReminder(sessionId, 'reminder text')).resolves.toEqual({ accepted: true })
+    expect(acquired).toHaveBeenCalledWith(sessionId)
+    expect(attach).toHaveBeenCalledWith(sessionId, expect.anything())
+    expect(call).toHaveBeenCalledWith(
+      'session/deliverReminder',
+      { request: { sessionId, text: 'reminder text' } },
+      { signal: expect.anything() },
+    )
+  })
+
+  it('surfaces a worker delivery failure to the Schedule caller', async () => {
+    const { router, call } = setup()
+    call.mockResolvedValueOnce({
+      ok: false,
+      error: { code: 'session/not-found', message: 'gone', details: {} },
+    })
+    await expect(router.deliverReminder(sessionId, 'reminder text')).rejects.toThrow('gone')
+  })
+
   it('uses an existing worker without acquiring a new one', async () => {
     const { router, call, acquired, get } = setup({ live: true })
     await router.dispatch?.('session/rename', payload({ request: { sessionId, title: 'new' } }), new AbortController().signal, owner)

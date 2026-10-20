@@ -6,7 +6,7 @@ import type {
 } from '@deepseek-ai/dsh-attachment'
 import type { Branded } from '@deepseek-ai/dsh-brand'
 import type { LlmAttemptId, MessageId } from '@deepseek-ai/dsh-llm/brand'
-import type { TextBlock } from '@deepseek-ai/dsh-llm'
+import type { ContextFormed, TextBlock } from '@deepseek-ai/dsh-llm'
 import type { SessionId, SessionSeqCursor } from '@deepseek-ai/dsh-session/types'
 import type { SessionProjectionMap } from '@deepseek-ai/dsh-session-projection/types'
 import type { Principal } from '@deepseek-ai/dsh-typert-protocol'
@@ -39,6 +39,17 @@ declare module '@deepseek-ai/dsh-session/types' {
      * assembly. Log-only: it never enters derived model history.
      */
     'model/selection': ModelSelection
+  }
+}
+
+declare module '@deepseek-ai/dsh-llm' {
+  interface MessageSourceMap {
+    /**
+     * A durable Host Schedule reminder. The Schedule service owns the rendered
+     * text; Session delivery only replays it into the owning Agent so the same
+     * message identity reaches both the inbox and the delivery history.
+     */
+    'schedule': { kind: 'schedule' } & ContextFormed
   }
 }
 
@@ -354,6 +365,42 @@ export interface SessionPromptRequest {
 /** Receipt after one prompt enters the target Agent inbox. */
 export interface SessionPromptValue {
   readonly accepted: true
+}
+
+/** One rendered Schedule reminder to deliver into a Session's owning Agent. */
+export interface SessionDeliverRequest {
+  readonly sessionId: SessionId
+  /** Complete model-visible reminder text; framing belongs to the caller. */
+  readonly text: string
+}
+
+/** Receipt after the reminder entered the inbox and its log flushed. */
+export interface SessionDeliverValue {
+  readonly accepted: true
+  /** Identity shared by the durable message and the caller's delivery history. */
+  readonly messageId: MessageId
+}
+
+/**
+ * Host-side port that delivers a reminder to whichever process owns the
+ * Session's Agent. A web Host registers it over its worker router; in-process
+ * deployments call {@link SessionController.deliverReminder} directly.
+ */
+export interface SessionReminderDelivery {
+  /**
+   * @param sessionId - Session whose Agent receives the reminder.
+   * @param text - complete model-visible reminder text.
+   * @param signal - optional cancellation of the local wait.
+   * @returns the durable message identity.
+   */
+  deliverReminder(sessionId: SessionId, text: string, signal?: AbortSignal): Promise<SessionDeliverValue>
+}
+
+declare module '@deepseek-ai/cordis' {
+  interface Context {
+    /** Host port for reminder delivery into an out-of-process Session Agent. */
+    sessionReminderDelivery?: SessionReminderDelivery
+  }
 }
 
 /** Durable image read request. */

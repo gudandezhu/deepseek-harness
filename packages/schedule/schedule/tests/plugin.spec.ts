@@ -2,6 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { MockInstance } from 'vitest'
 import { SessionId, SessionSeq } from '@deepseek-ai/dsh-session'
 import type { SessionEvent } from '@deepseek-ai/dsh-session'
+import { MessageId } from '@deepseek-ai/dsh-llm/brand'
 import { gatedScheduleBackend, harness, agentFor } from './harness.ts'
 import { MemoryMediaPool } from '../../../storage/storage-domain/tests/helpers/memory-backend.ts'
 import { scheduleDomain } from '../src/storage.ts'
@@ -320,6 +321,31 @@ describe('shared Schedule management', () => {
   })
 })
 
+
+describe('routed Schedule delivery', () => {
+  it('uses the host delivery port instead of resolving a local Agent', async () => {
+    const messageId = MessageId('routed-message')
+    const deliverReminder = vi.fn(async () => ({ accepted: true as const, messageId }))
+    const test = await harness({
+      onContext: (ctx) => { ctx.provide('sessionReminderDelivery', { deliverReminder } as never) },
+    })
+    tests.push(test)
+    const sessionId = SessionId('routed')
+    const record = await test.service.create(sessionId, {
+      prompt: 'Routed reminder', after_seconds: 1, title: 'Routed reminder',
+    })
+    await vi.advanceTimersByTimeAsync(1000)
+    expect(deliverReminder).toHaveBeenCalledWith(sessionId, expect.stringContaining('[SCHEDULE REMINDER]'))
+    expect(test.resolve).not.toHaveBeenCalled()
+    expect(test.flush).not.toHaveBeenCalled()
+    expect(await test.service.catalog()).toEqual([{
+      ...record, sessionId, status: 'inactive',
+      lastDelivery: {
+        scheduledAt: record.scheduledAt, deliveredAt: '2026-09-16T00:00:01.000Z', messageId,
+      },
+    }])
+  })
+})
 
 describe('retained Schedule delivery', () => {
   it('keeps ended tasks through restart without redelivery and deletes only within their Session binding', async () => {
