@@ -1,0 +1,22 @@
+# Bilingual-pair consistency record for README.md (docs/i18n/README.md): per heading
+# section, a hash of its English and Chinese blocks outside code blocks and generated regions.
+# After editing either side, bring the other along and re-record with:
+#   pnpm run verify-translation-pairing --write packages/api/session-worker-bridge/README.md
+/:
+  en: 69f138406d612578
+  zh: 29d8550b649b9324
+/deepseek-ai-dsh-session-worker-bridge:
+  en: ba4da2a7e74c4f81
+  zh: 818df04961eec33b
+/deepseek-ai-dsh-session-worker-bridge/summary:
+  en: 616f0c1351767805
+  zh: 92dcd89799361604
+/deepseek-ai-dsh-session-worker-bridge/table-of-contents:
+  en: bac38673ddc9b856
+  zh: 075e1594d8299164
+/deepseek-ai-dsh-session-worker-bridge/known-limitations-and-deferred-work:
+  en: 393c146d5c91fde0
+  zh: 938b6168c65af174
+/deepseek-ai-dsh-session-worker-bridge/known-limitations-and-deferred-work/dev-note:
+  en: e67f633dc6fe7773
+  zh: e88aeb617ffb74ea

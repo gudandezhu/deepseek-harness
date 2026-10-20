@@ -37,6 +37,10 @@ const NO_MODEL_EXPERIENCE_SECTION: Readonly<Record<string, string>> = {
   'packages/util/workspace-path': 'The package only formats Workspace paths for browser UI; it never constructs model input.',
   'packages/util/values': 'The package only validates, snapshots, compares, freezes, or rejects caller-owned values; consumers own every model-facing use.',
   'packages/util/code-language': 'The package only maps a filename suffix to a syntax-highlighting language id; the read consumer owns the persisted hint.',
+  'packages/api/session-worker-protocol': 'Framing and framing validation only; forwarded business methods own every model-visible effect.',
+  'packages/api/session-worker-bridge': 'Forwards already-assembled requests and streams between the Host and a worker; the composed consumer plugins own model-visible content.',
+  'packages/api/session-worker-supervisor': 'Process lifecycle and transport supervision only; the worker\'s composed Agent plugins own model-visible content.',
+  'packages/api/session-worker-host': 'Host-side routing and live Session state only; the worker\'s Agent owns prompts, tools, and Session events.',
 }
 
 /**
@@ -188,6 +192,7 @@ const SENTENCE_MODEL_EXPERIENCE: Readonly<Record<string, SentenceContract>> = {
   'packages/experimental/badge-skill-bundle': { kind: 'indirect', reason: 'The profile layer delegates model-visible behavior to its selected capability.' },
   'packages/experimental/session-titles-bundle': { kind: 'indirect', reason: 'The profile layer delegates model-visible behavior to its selected capability.' },
   'packages/bundle/base': { kind: 'indirect', reason: 'The bundle is a patch-list carrier; each inserted row\'s package owns its model-facing behavior.' },
+  'packages/bundle/session-worker': { kind: 'indirect', reason: 'The profile layer delegates model-visible behavior to the worker plugins it composes.' },
   'packages/bundle/headless': { kind: 'none', reason: 'The one-shot runner submits the task as an ordinary user message; prompts and tools belong to the composed base and headless bundles.' },
   'packages/llm/llm': { kind: 'none', reason: 'The adapter registry forwards already-assembled requests unchanged.' },
   'packages/llm/token-meter': { kind: 'indirect', reason: 'The measurement service leaves model-visible changes to its consumers.' },

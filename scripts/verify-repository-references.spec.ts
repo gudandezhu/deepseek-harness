@@ -161,12 +161,13 @@ describe('maintained repository reference policy', () => {
     expect(scanRepositoryReferences(fixture.root)).toEqual([])
   })
 
-  it('excludes only ignored new files, vendored sources, frozen notes, and deleted files', (test) => {
+  it('excludes only ignored new files, vendored sources, frozen notes, generated lockfiles, and deleted files', (test) => {
     const fixture = repository(test)
     fixture.write('.gitignore', 'ignored.md\ntracked-ignore.md\n')
     fixture.write('ignored.md', fixture.commit)
     fixture.write('vendor/project/file.md', `${fixture.commit}\n${organizationUrl}`)
     fixture.write('.agents/notes/archived/process/frozen.md', `${fixture.commit}\n${organizationUrl}`)
+    fixture.write('python/sdk/uv.lock', fixture.commit)
     fixture.write('tracked-ignore.md', fixture.commit)
     fixture.git(['add', '--force', 'tracked-ignore.md'])
     unlinkSync(join(fixture.root, 'tracked.md'))
@@ -206,10 +207,11 @@ describe('maintained repository reference policy', () => {
     )
   })
 
-  it('accepts distinct organization names and excludes the frozen and vendored paths', () => {
+  it('accepts distinct organization names and excludes the frozen, vendored, and generated lockfile paths', () => {
     expect(findRepositoryReferences('source.md', `${organizationUrl}-tools/project`, new Set())).toEqual([])
     expect(findRepositoryReferences('vendor/project/source.md', organizationUrl, new Set())).toEqual([])
     expect(findRepositoryReferences('.agents/notes/archived/process/frozen.md', organizationUrl, new Set())).toEqual([])
+    expect(findRepositoryReferences('python/sdk/uv.lock', organizationUrl, new Set())).toEqual([])
     expect(findRepositoryReferences('.agents/notes/implemented/process/current.md', organizationUrl, new Set()))
       .toEqual([{ file: '.agents/notes/implemented/process/current.md', line: 1, kind: 'organization-url' }])
   })

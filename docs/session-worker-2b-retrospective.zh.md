@@ -1,8 +1,8 @@
 # session-worker 阶段二 2b 时间复盘
 
-日期：2026-10-20
-分支：`feat/session-worker-idle-reclaim`
-范围：阶段二 2b 的实现与验证
+[English](session-worker-2b-retrospective.md) | 中文
+
+日期：2026-10-20。分支：`feat/session-worker-idle-reclaim`。范围：阶段二 2b 的实现与验证。
 
 ## 背景
 
@@ -22,7 +22,7 @@
 
 ## 根因
 
-upload receipt e2e 在 worker A 退出、worker B 拉起后，打开 follow 等 `assistant/message`。冷窗口结束后 follow 没有保持 live 观察，turn 一直不来，测试等到超时。修复提交是 `8f5d31a596`（session follow 冷窗口后保持 live 观察）。第一次 550 秒发生在修复前，第二次发生在修复后仍不稳定的阶段。
+upload receipt e2e 在 worker A 退出、worker B 拉起后，打开 follow 等 `assistant/message`。冷窗口结束后 follow 没有保持 live 观察，turn 一直不来，测试等到超时。修复内容是让 session follow 在冷窗口结束后保持 live 观察。第一次 550 秒发生在修复前，第二次发生在修复后仍不稳定的阶段。
 
 ## 低效点
 
@@ -41,16 +41,14 @@ upload receipt e2e 在 worker A 退出、worker B 拉起后，打开 follow 等 
 - 跨进程流测试显式给“等待 frame”的 deadline，并输出已收到的 frame 类型。
 - 测试启动时断言 `DSH_HOME` 是临时目录，防止污染真实会话库。
 
-## 提交清单
+## 提交内容
 
-| 提交 | 内容 |
-|---|---|
-| `366e73d545` | schedule 投递改走 session router |
-| `09f226c496` | job/list、job/follow 路由到 owning worker |
-| `52a4f13d72` | worker `$events` 聚合与跨进程审批 waterfall |
-| `8f5d31a596` | session follow 冷窗口后保持 live 观察 |
-| `101d040f9a` | 文件上传 receipt 改为按 sessionId 持久化 |
-| `91ef8177e3` | 宿主 live state 增加内存上限 |
-| `3e7ff2abef` | worker 崩溃对浏览器可见并在下次 attach 恢复 |
-| `b0784178a7` | 记录 Desktop/Electron 的 worker 命令缺口 |
-| `ed8c92ee79` | 修复 lint 告警 |
+- schedule 投递改走 session router。
+- job/list、job/follow 路由到 owning worker。
+- worker `$events` 聚合与跨进程审批 waterfall。
+- session follow 冷窗口后保持 live 观察。
+- 文件上传 receipt 改为按 sessionId 持久化。
+- 宿主 live state 增加内存上限。
+- worker 崩溃对浏览器可见并在下次 attach 恢复。
+- 记录 Desktop/Electron 的 worker 命令缺口。
+- 修复 lint 告警。

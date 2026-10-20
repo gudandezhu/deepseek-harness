@@ -1,0 +1,25 @@
+# Bilingual-pair consistency record for session-worker-2b-retrospective.md (docs/i18n/README.md): per heading
+# section, a hash of its English and Chinese blocks outside code blocks and generated regions.
+# After editing either side, bring the other along and re-record with:
+#   pnpm run verify-translation-pairing --write docs/session-worker-2b-retrospective.md
+/session-worker-stage-2b-time-retrospective:
+  en: a66f4a1552ab065e
+  zh: 8adea750e95daf43
+/session-worker-stage-2b-time-retrospective/background:
+  en: c298023fa3a1af93
+  zh: 3d4cce54de240cb1
+/session-worker-stage-2b-time-retrospective/time-distribution:
+  en: d22a480e7180c8b9
+  zh: e3aaed3343c89a32
+/session-worker-stage-2b-time-retrospective/root-cause:
+  en: 37fc237bc53f507e
+  zh: e45b4c6a67901c32
+/session-worker-stage-2b-time-retrospective/inefficiencies:
+  en: 9ae16a14240413e2
+  zh: 9567fbc2b58ee26e
+/session-worker-stage-2b-time-retrospective/improvements:
+  en: 021c64764c8eaa88
+  zh: 16e2c0cfaad35d3e
+/session-worker-stage-2b-time-retrospective/commits:
+  en: 6747c2c815522d1f
+  zh: 98ae554296b925c5
