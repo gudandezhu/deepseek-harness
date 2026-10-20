@@ -58,6 +58,8 @@ export interface SessionWorkerTransport {
   readonly pid: number
   /** Resolves after the worker process range is empty. */
   readonly exited: Promise<void>
+  /** Whether the process ended without a requested shutdown. */
+  readonly crashed?: boolean
   /** Open one forwarded logical stream. */
   open(endpoint: string, payload: unknown, options?: { readonly signal?: AbortSignal }): SessionWorkerStreamTransport
 }
@@ -102,6 +104,11 @@ export interface SessionLiveListeners {
   readonly projection: (update: SessionLiveProjection) => void
   /** A worker attachment published a fresh opening window. */
   readonly generation: (sessionId: SessionId) => void
+  /**
+   * The worker holding this generation crashed. Followers should reinstall the
+   * retained window; a later attachment publishes a fresh generation.
+   */
+  readonly lost?: (sessionId: SessionId) => void
 }
 
 /** One Session's retained live state. */
@@ -238,6 +245,13 @@ export class SessionWorkerLives {
       this.clearColdTimer(state)
       state.coldTimer = this.armColdTimer(sessionId, state)
       this.enforceColdLimit()
+      if (worker.crashed === true) {
+        // A crash is visible: tell the browser, and let every follower
+        // reinstall the retained window so a stale Assistant baseline does not
+        // survive the lost process.
+        this.ctx.emit('api-session/error', sessionId, 'The session worker exited unexpectedly; the view was reloaded.')
+        for (const listener of this.listeners) listener.lost?.(sessionId)
+      }
       this.ctx.emit('api-session/status', sessionId, false)
     })
   }

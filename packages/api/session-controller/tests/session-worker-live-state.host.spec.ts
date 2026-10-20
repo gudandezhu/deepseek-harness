@@ -62,6 +62,7 @@ class FakeStream implements SessionWorkerStreamTransport {
 
 class FakeWorker implements SessionWorkerTransport {
   readonly pid = 12_345
+  crashed = true
   readonly streams = new Map<string, FakeStream[]>()
   private exit!: () => void
   readonly exited = new Promise<void>((resolve) => { this.exit = resolve })
@@ -304,6 +305,46 @@ describe('Session worker live state', () => {
     } finally {
       vi.useRealTimers()
     }
+  })
+
+  it('reports a crash, resets followers to the retained window, and recovers on the next attach', async () => {
+    const ctx = hostContext()
+    const lives = new SessionWorkerLives(ctx)
+    const errors = vi.fn()
+    ctx.on('api-session/error', errors)
+    const lost = vi.fn()
+    lives.observe({ event: () => {}, assistant: () => {}, projection: () => {}, generation: () => {}, lost })
+    const first = new FakeWorker()
+    lives.attach(sessionId, first)
+    first.emit('session/follow', {
+      type: 'snapshot',
+      header: header(),
+      cursor: 3,
+      records: [{ type: 'event', event: event(3) }],
+      hasMore: false,
+      projections: { asOfSeq: 3, values: {} },
+      assistantStream: { revision: 0 },
+    })
+    await settle()
+    first.terminate()
+    await settle()
+    expect(errors).toHaveBeenCalledWith(sessionId, expect.stringContaining('exited unexpectedly'))
+    expect(lost).toHaveBeenCalledWith(sessionId)
+    expect(lives.view(sessionId)).toMatchObject({ cursor: 3, agentAvailable: false, generation: 1 })
+
+    const second = new FakeWorker()
+    lives.attach(sessionId, second)
+    second.emit('session/follow', {
+      type: 'snapshot',
+      header: header(),
+      cursor: 5,
+      records: [{ type: 'event', event: event(5) }],
+      hasMore: false,
+      projections: { asOfSeq: 5, values: {} },
+      assistantStream: { revision: 0 },
+    })
+    await settle()
+    expect(lives.view(sessionId)).toMatchObject({ cursor: 5, agentAvailable: true, generation: 2 })
   })
 
   it('evicts the least recently touched cold Sessions beyond the cap', async () => {

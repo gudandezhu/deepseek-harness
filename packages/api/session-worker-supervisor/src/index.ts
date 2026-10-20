@@ -163,6 +163,8 @@ export interface SessionWorkerHandle {
   readonly exited: Promise<void>
   /** Current idle observation from the worker. */
   readonly idle: boolean
+  /** Whether the process ended without a requested shutdown. */
+  readonly crashed: boolean
 
   /**
    * Forward one unary Remote call.
@@ -376,6 +378,10 @@ class SessionWorkerConnection implements SessionWorkerHandle {
 
   get idle(): boolean {
     return this.idleState
+  }
+
+  get crashed(): boolean {
+    return this.finished && !this.shuttingDown
   }
 
   /** Whether this worker refuses new work because it is draining or gone. */

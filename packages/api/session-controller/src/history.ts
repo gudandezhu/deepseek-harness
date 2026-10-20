@@ -164,6 +164,13 @@ export class SessionHistoryController {
         buffered.pushBack({ type: 'generation' })
         waker.notify()
       },
+      lost: (sessionId) => {
+        if (sessionId !== target) return
+        // Reinstall the retained window: the client drops the Assistant
+        // baseline owned by the dead process and keeps the durable cursor.
+        buffered.pushBack({ type: 'generation' })
+        waker.notify()
+      },
     })
     const onAbort = (): void => { waker.notify() }
     signal.addEventListener('abort', onAbort, { once: true })
