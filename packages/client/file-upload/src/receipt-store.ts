@@ -23,7 +23,12 @@ export interface StagedFileUpload {
   readonly file: FileAttachmentRef
   /** Prompt that accepted this receipt; absent until successful admission. */
   requestId?: string
+  /** When the receipt was staged; used to prune uploads no prompt consumed. */
+  readonly createdAt?: number
 }
+
+/** Unconsumed receipts older than this are dropped when their document loads. */
+export const RECEIPT_TTL_MS = 7 * 24 * 60 * 60 * 1_000
 
 /** One receipt's prompt binding before {@link StagedReceiptStore.bind}. */
 export interface BoundReceipt {
@@ -35,7 +40,11 @@ export interface BoundReceipt {
 interface ReceiptDocument {
   readonly version: 1
   readonly sessionId: string
-  readonly receipts: Readonly<Record<string, { readonly file: FileAttachmentRef; readonly requestId?: string }>>
+  readonly receipts: Readonly<Record<string, {
+    readonly file: FileAttachmentRef
+    readonly requestId?: string
+    readonly createdAt?: number
+  }>>
 }
 
 const DOCUMENT_VERSION = 1
@@ -76,7 +85,7 @@ export class StagedReceiptStore {
    * @param upload - staged upload to persist.
    */
   put(sessionId: SessionId, receiptId: FileUploadReceiptId, upload: StagedFileUpload): void {
-    this.load(sessionId).set(receiptId, upload)
+    this.load(sessionId).set(receiptId, { ...upload, createdAt: upload.createdAt ?? Date.now() })
     this.persist(sessionId)
   }
 
@@ -172,11 +181,27 @@ export class StagedReceiptStore {
       this.warn(`file-upload: receipt cache for "${sessionId}" has an unexpected shape`)
       return staged
     }
+    const now = Date.now()
+    let pruned = false
     for (const [receiptId, entry] of Object.entries(parsed.receipts)) {
+      if (entry.createdAt !== undefined && now - entry.createdAt > RECEIPT_TTL_MS) {
+        pruned = true
+        continue
+      }
       staged.set(receiptId as FileUploadReceiptId, {
         file: entry.file,
         ...entry.requestId === undefined ? {} : { requestId: entry.requestId },
+        ...entry.createdAt === undefined ? {} : { createdAt: entry.createdAt },
       })
+    }
+    if (pruned) {
+      // Best effort: a failed cleanup keeps the in-memory view correct and
+      // retries on the next load.
+      try {
+        this.persist(sessionId)
+      } catch (error) {
+        this.warn(`file-upload: expired receipts for "${sessionId}" could not be pruned: ${String(error)}`)
+      }
     }
     return staged
   }
@@ -193,11 +218,12 @@ export class StagedReceiptStore {
       }
       return
     }
-    const receipts: Record<string, { file: FileAttachmentRef; requestId?: string }> = {}
+    const receipts: Record<string, { file: FileAttachmentRef; requestId?: string; createdAt?: number }> = {}
     for (const [receiptId, upload] of staged) {
       receipts[receiptId] = {
         file: upload.file,
         ...upload.requestId === undefined ? {} : { requestId: upload.requestId },
+        ...upload.createdAt === undefined ? {} : { createdAt: upload.createdAt },
       }
     }
     const document: ReceiptDocument = { version: DOCUMENT_VERSION, sessionId, receipts }
@@ -229,6 +255,7 @@ function isReceipt(value: unknown): value is { readonly file: FileAttachmentRef;
     && typeof ref['name'] === 'string'
     && typeof ref['bytes'] === 'number'
     && (record['requestId'] === undefined || typeof record['requestId'] === 'string')
+    && (record['createdAt'] === undefined || typeof record['createdAt'] === 'number')
 }
 
 function isMissingFile(error: unknown): boolean {

@@ -7,7 +7,7 @@ import { join } from 'node:path'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import type { FileAttachmentRef } from '@deepseek-ai/dsh-attachment'
 import type { SessionId } from '@deepseek-ai/dsh-session'
-import { StagedReceiptStore } from '../src/receipt-store.ts'
+import { RECEIPT_TTL_MS, StagedReceiptStore } from '../src/receipt-store.ts'
 import type { FileUploadReceiptId } from '../src/types.ts'
 
 const sessionId = 'session-receipts' as SessionId
@@ -71,6 +71,21 @@ describe('Staged upload receipt store', () => {
     expect(await readdir(directory)).toEqual([])
   })
 
+  it('prunes an unconsumed receipt after the retention window', async () => {
+    vi.useFakeTimers()
+    try {
+      vi.setSystemTime(1_000_000)
+      const directory = await root()
+      new StagedReceiptStore(directory).put(sessionId, receipt('receipt-old'), { file })
+      vi.setSystemTime(1_000_000 + RECEIPT_TTL_MS + 1)
+      const later = new StagedReceiptStore(directory)
+      expect(later.get(sessionId, receipt('receipt-old'))).toBeUndefined()
+      expect(await readdir(directory)).toEqual([])
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
   it('reloads from disk after the hot copy is forgotten', async () => {
     const directory = await root()
     const store = new StagedReceiptStore(directory)
@@ -90,14 +105,20 @@ describe('Staged upload receipt store', () => {
   })
 
   it('reads back exactly the receipt document it wrote', async () => {
-    const directory = await root()
-    const store = new StagedReceiptStore(directory)
-    store.put(sessionId, receipt('receipt-5'), { file, requestId: 'request-5' })
-    const path = join(directory, `${createHash('sha256').update(sessionId).digest('hex')}.json`)
-    expect(JSON.parse(await readFile(path, 'utf8'))).toEqual({
-      version: 1,
-      sessionId,
-      receipts: { 'receipt-5': { file, requestId: 'request-5' } },
-    })
+    vi.useFakeTimers()
+    try {
+      vi.setSystemTime(5_000)
+      const directory = await root()
+      const store = new StagedReceiptStore(directory)
+      store.put(sessionId, receipt('receipt-5'), { file, requestId: 'request-5' })
+      const path = join(directory, `${createHash('sha256').update(sessionId).digest('hex')}.json`)
+      expect(JSON.parse(await readFile(path, 'utf8'))).toEqual({
+        version: 1,
+        sessionId,
+        receipts: { 'receipt-5': { file, requestId: 'request-5', createdAt: 5_000 } },
+      })
+    } finally {
+      vi.useRealTimers()
+    }
   })
 })
