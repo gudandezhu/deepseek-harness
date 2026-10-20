@@ -24,7 +24,7 @@ kind: "package-reference"
 
 - 实时状态只保留有界事件环和投影缓存；冷 Session 在配置的 TTL 后过期。
 - worker 崩溃会表现为状态变化，下一次 attach 会重置客户端游标；当前回合只会在下一次 resume 时从持久日志修复。
-- Desktop 和 Electron 的 worker 启动需要显式命令；从 CLI 派生的默认命令无法从 Desktop host 入口启动 worker profile。
+- Electron host 从桌面 runtime 目录派生 worker 命令；argv 约定不同的嵌入方必须显式配置 `command` 和 `ELECTRON_RUN_AS_NODE=1`。
 
 <a id="dev-note"></a>
 ### 开发备注

@@ -23,6 +23,14 @@ import {
 
 const repositoryRoot = fileURLToPath(new URL('../../../../', import.meta.url))
 const cliEntry = join(repositoryRoot, 'apps/cli/src/bin.ts')
+const builtCliEntry = join(repositoryRoot, 'apps/cli/lib/bin.js')
+const electronExecutable = process.env.DSH_TEST_ELECTRON
+const workerCommand = electronExecutable === undefined || electronExecutable === ''
+  ? [process.execPath, '--import', 'tsx/esm', cliEntry]
+  : [electronExecutable, '--expose-internals', builtCliEntry]
+const workerEnvironment = electronExecutable === undefined || electronExecutable === ''
+  ? {}
+  : { ELECTRON_RUN_AS_NODE: '1' }
 const MOCK_TEXT = 'mock reply from the session worker'
 
 interface FollowSnapshot {
@@ -63,7 +71,7 @@ beforeAll(async () => {
   context = new Context()
   await context.plugin(LocalSubprocessRuntime)
   await context.plugin(SessionWorkerSupervisor, {
-    command: [process.execPath, '--import', 'tsx/esm', cliEntry],
+    command: workerCommand,
     profile: 'session-worker',
     cwd: repositoryRoot,
     args: ['--patch', patch],
@@ -74,6 +82,7 @@ beforeAll(async () => {
       NO_PROXY: '127.0.0.1,localhost',
       no_proxy: '127.0.0.1,localhost',
       DSH_TELEMETRY_DISABLED: '1',
+      ...workerEnvironment,
     },
     idleTimeoutMs: 1_500,
     readyTimeoutMs: 120_000,

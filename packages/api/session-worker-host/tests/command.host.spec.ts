@@ -1,9 +1,12 @@
 /** Worker argv and environment derivation from the Host invocation. */
 
+import { join } from 'node:path'
 import { describe, expect, it } from 'vitest'
 import {
   DEFAULT_FORWARDED_ENV,
+  electronWorkerCommand,
   forwardedEnvironment,
+  hostWorkerCommand,
   inheritedPatchArgs,
   sharedNodeFlags,
   workerCommand,
@@ -15,6 +18,44 @@ describe('session worker command derivation', () => {
       .toEqual(['/usr/bin/node', '--import', 'tsx/esm', '/repo/apps/cli/src/bin.ts'])
     expect(workerCommand('/usr/bin/node', [], '/repo/bin.ts')).toHaveLength(2)
     expect(() => workerCommand('/usr/bin/node', [], undefined)).toThrow(/argv\[1\]/)
+  })
+
+  it('boots the bundled CLI under Electron when the host exposes its runtime directory', () => {
+    expect(electronWorkerCommand('/app/Electron', '/app/runtime')).toEqual([
+      '/app/Electron',
+      '--expose-internals',
+      join('/app/runtime', 'node_modules', '@deepseek-ai', 'dsh', 'lib', 'bin.js'),
+    ])
+    expect(electronWorkerCommand('/app/Electron', undefined)).toBeUndefined()
+    expect(electronWorkerCommand('/app/Electron', '')).toBeUndefined()
+  })
+
+  it('selects the Electron command over the desktop host entry', () => {
+    expect(hostWorkerCommand({
+      electron: true,
+      execPath: '/app/Electron',
+      execArgv: ['--inspect=9229'],
+      entry: '/app/desktop-host/lib/index.js',
+      runtimeDir: '/app/runtime',
+    })).toEqual([
+      '/app/Electron',
+      '--expose-internals',
+      join('/app/runtime', 'node_modules', '@deepseek-ai', 'dsh', 'lib', 'bin.js'),
+    ])
+    expect(hostWorkerCommand({
+      electron: false,
+      execPath: '/usr/bin/node',
+      execArgv: ['--import', 'tsx/esm'],
+      entry: '/repo/apps/cli/src/bin.ts',
+      runtimeDir: undefined,
+    })).toEqual(['/usr/bin/node', '--import', 'tsx/esm', '/repo/apps/cli/src/bin.ts'])
+    expect(() => hostWorkerCommand({
+      electron: true,
+      execPath: '/app/Electron',
+      execArgv: [],
+      entry: '/app/desktop-host/lib/index.js',
+      runtimeDir: undefined,
+    })).toThrow(/runtime directory/)
   })
 
   it('drops inspector and test-runner flags that a child cannot share', () => {

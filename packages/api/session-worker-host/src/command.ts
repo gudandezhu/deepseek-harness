@@ -1,5 +1,7 @@
 /** Derive the worker argv from the running CLI invocation. */
 
+import { join } from 'node:path'
+
 /**
  * Select Host environment entries a worker must share.
  *
@@ -53,7 +55,9 @@ const EXCLUSIVE_VALUE_FLAGS: ReadonlySet<string> = new Set([
  * Desktop/Electron does not: its host process is
  * `@deepseek-ai/dsh-desktop-host`, whose entry takes positional runtime
  * arguments and would reboot the desktop host instead of a worker profile.
- * Such an embedder must set the plugin's `command` (and `env`) explicitly:
+ * {@link electronWorkerCommand} handles that embedding; an embedder with a
+ * different argv contract must set the plugin's `command` (and `env`)
+ * explicitly:
  *
  * ```yaml
  * - id: session-worker-host
@@ -65,12 +69,6 @@ const EXCLUSIVE_VALUE_FLAGS: ReadonlySet<string> = new Set([
  *     env:
  *       ELECTRON_RUN_AS_NODE: '1'
  * ```
- *
- * `runtimeDir` is the Desktop host's `process.argv[2]`; the CLI entry is
- * `@deepseek-ai/dsh`'s `bin` field. `DSH_HOME` and provider credentials travel
- * through the default forwarded environment. This desktop path has no
- * automated test in this repository: every e2e host here boots the CLI
- * directly, so a packaged Electron launch must be verified by hand.
  *
  * @param execPath - Node executable.
  * @param execArgv - Node flags of the Host process.
@@ -86,6 +84,57 @@ export function workerCommand(
     throw new Error('session-worker-host: process.argv[1] does not name the CLI entry point')
   }
   return [execPath, ...sharedNodeFlags(execArgv), entry]
+}
+
+/**
+ * Build the Electron argv that boots the bundled CLI as a Node worker.
+ *
+ * `@deepseek-ai/dsh-desktop-host` receives its runtime directory as
+ * `process.argv[2]`; that directory's `node_modules/@deepseek-ai/dsh` is the
+ * installed CLI entry. The child runs the same Electron executable with
+ * `ELECTRON_RUN_AS_NODE=1`, so it starts the CLI rather than reopening the
+ * desktop application.
+ *
+ * @param execPath - Electron executable.
+ * @param runtimeDir - Desktop host's runtime directory (`process.argv[2]`).
+ * @returns executable plus arguments, or undefined when no runtime directory is available.
+ */
+export function electronWorkerCommand(execPath: string, runtimeDir: string | undefined): string[] | undefined {
+  if (runtimeDir === undefined || runtimeDir === '') return undefined
+  return [execPath, '--expose-internals', join(runtimeDir, 'node_modules', '@deepseek-ai', 'dsh', 'lib', 'bin.js')]
+}
+
+/** Process facts that select between the CLI and Electron worker argv. */
+export interface HostWorkerCommandInput {
+  /** Whether the current process is an Electron main process. */
+  readonly electron: boolean
+  /** Current process executable. */
+  readonly execPath: string
+  /** Current process Node flags. */
+  readonly execArgv: readonly string[]
+  /** Current process entry point (`process.argv[1]`). */
+  readonly entry: string | undefined
+  /** Desktop host runtime directory (`process.argv[2]`). */
+  readonly runtimeDir: string | undefined
+}
+
+/**
+ * Select the worker argv for the process hosting this plugin.
+ * @param input - Electron detection plus the hosting process argv facts.
+ * @returns executable and fixed arguments, without a profile.
+ * @throws Error when an Electron host exposes no runtime directory, or a CLI host exposes no entry.
+ */
+export function hostWorkerCommand(input: HostWorkerCommandInput): string[] {
+  if (input.electron) {
+    const command = electronWorkerCommand(input.execPath, input.runtimeDir)
+    if (command === undefined) {
+      throw new Error(
+        'session-worker-host: Electron hosts must pass their runtime directory as process.argv[2] or configure command',
+      )
+    }
+    return command
+  }
+  return workerCommand(input.execPath, input.execArgv, input.entry)
 }
 
 /**

@@ -20,7 +20,7 @@ Mounts the Host side of the per-session process boundary: a worker supervisor, t
 
 - Live state retains a bounded event ring and projection cache; cold Sessions expire after the configured TTL.
 - A worker crash is visible as a status change, and the next attach resets the client cursor; the current turn is repaired from the durable log only on the next resume.
-- Desktop and Electron worker startup needs an explicit command; the CLI-derived default does not boot the worker profile from the Desktop host entry.
+- Electron hosts derive the worker command from the desktop runtime directory; an embedder with a different argv contract must configure `command` and `ELECTRON_RUN_AS_NODE=1`.
 
 <a id="dev-note"></a>
 ### Dev Note

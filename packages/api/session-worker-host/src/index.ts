@@ -27,17 +27,20 @@ import {
   DEFAULT_WORKER_PROFILE,
   SessionWorkerSupervisor,
 } from '@deepseek-ai/dsh-session-worker-supervisor'
-import { DEFAULT_FORWARDED_ENV, forwardedEnvironment, inheritedPatchArgs, workerCommand } from './command.ts'
+import { DEFAULT_FORWARDED_ENV, forwardedEnvironment, hostWorkerCommand, inheritedPatchArgs } from './command.ts'
 import { SessionWorkerEvents } from './events.ts'
 import { SessionWorkerRouter } from './router.ts'
 
 export {
   DEFAULT_FORWARDED_ENV,
+  electronWorkerCommand,
   forwardedEnvironment,
+  hostWorkerCommand,
   inheritedPatchArgs,
   sharedNodeFlags,
   workerCommand,
 } from './command.ts'
+export type { HostWorkerCommandInput } from './command.ts'
 export { SessionWorkerEvents } from './events.ts'
 export { SessionWorkerRouter } from './router.ts'
 
@@ -165,25 +168,48 @@ interface ResolvedConfig {
   readonly maxColdSessions: number
 }
 
+/**
+ * Derive the worker command from the process that hosts this plugin.
+ * @returns the executable and fixed arguments, without a profile.
+ */
+function workerCommandForHost(): string[] {
+  return hostWorkerCommand({
+    electron: process.versions.electron !== undefined,
+    execPath: process.execPath,
+    execArgv: process.execArgv,
+    entry: process.argv[1],
+    runtimeDir: process.argv[2],
+  })
+}
+
+/**
+ * Environment that makes the Electron executable run the bundled CLI as Node.
+ * @returns one entry under Electron, nothing otherwise.
+ */
+function electronEnvironment(): Record<string, string> {
+  return process.versions.electron === undefined ? {} : { ELECTRON_RUN_AS_NODE: '1' }
+}
+
 function resolveConfig(config: Config): ResolvedConfig {
   // The schema materializes an unspecified string array as `[]`, so an empty
   // value means "derive it" rather than "boot nothing".
   const command = config.command !== undefined && config.command.length > 0
     ? config.command
-    : workerCommand(process.execPath, process.execArgv, process.argv[1])
+    : workerCommandForHost()
   const args = config.args !== undefined && config.args.length > 0
     ? config.args
     : inheritedPatchArgs(process.argv.slice(2))
   const forwardEnv = config.forwardEnv !== undefined && config.forwardEnv.length > 0
     ? config.forwardEnv
     : DEFAULT_FORWARDED_ENV
+  // The subprocess scrub removes DSH_* and credential-shaped names, so the
+  // deployment identity and any exported provider credential travel here.
+  const env = { ...forwardedEnvironment(forwardEnv), ...electronEnvironment(), ...config.env }
   return {
     command,
     profile: config.profile ?? DEFAULT_WORKER_PROFILE,
     args,
-    // The subprocess scrub removes DSH_* and credential-shaped names, so the
-    // deployment identity and any exported provider credential travel here.
-    env: { ...forwardedEnvironment(forwardEnv), ...config.env },
+    env,
     idleTimeoutMs: config.idleTimeoutMs ?? idleTimeoutFromEnvironment(),
     readyTimeoutMs: config.readyTimeoutMs ?? DEFAULT_READY_TIMEOUT_MS,
     shutdownTimeoutMs: config.shutdownTimeoutMs ?? DEFAULT_SHUTDOWN_TIMEOUT_MS,

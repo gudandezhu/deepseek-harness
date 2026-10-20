@@ -24,7 +24,7 @@ kind: "package-reference"
 
 - 没有 worker 池或并发上限：每个活跃 Session 都有自己的进程。
 - 崩溃的 worker 不会自动重启；下一次路由请求会启动新 worker。
-- 默认命令启动当前 Host 的 CLI 入口；Desktop 等嵌入方必须显式配置 `command` 和 `ELECTRON_RUN_AS_NODE=1`。
+- 默认命令启动当前 Host 的 CLI 入口；直接使用 supervisor 且入口不同的嵌入方必须配置 `command`，Electron 还需要 `ELECTRON_RUN_AS_NODE=1`。
 
 <a id="dev-note"></a>
 ### 开发备注

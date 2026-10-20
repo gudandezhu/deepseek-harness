@@ -20,7 +20,7 @@ Spawns and owns one `session-worker` child per Session for a Host generation. It
 
 - No worker pool or concurrency limit: every active Session gets its own process.
 - Crashed workers are not restarted automatically; the next routed request spawns a new worker.
-- The default command boots the CLI entry of the running Host; embedders such as Desktop must configure an explicit `command` and `ELECTRON_RUN_AS_NODE=1`.
+- The default command boots the CLI entry of the running Host; a direct supervisor embedder with another entry must configure `command` and, for Electron, `ELECTRON_RUN_AS_NODE=1`.
 
 <a id="dev-note"></a>
 ### Dev Note

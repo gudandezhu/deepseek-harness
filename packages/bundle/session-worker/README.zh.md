@@ -35,7 +35,7 @@ kind: "package-bundle"
 
 - 该 bundle 只作为 worker 使用；不暴露 HTTP 界面，也不能作为面向用户的 Web 应用启动。
 - 它依赖 Host supervisor 提供继承的 fd 7 控制通道并路由 Session 写请求。
-- Desktop 需要显式的 worker 命令，因为 Desktop host 入口不是 CLI 入口。
+- Electron host 从桌面 runtime 目录派生 worker 命令；不同的嵌入方必须显式配置。
 
 <a id="dev-note"></a>
 ### 开发备注
