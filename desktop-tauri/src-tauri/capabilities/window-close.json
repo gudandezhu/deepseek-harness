@@ -1,0 +1,13 @@
+{
+  "$schema": "../gen/schemas/desktop-schema.json",
+  "identifier": "window-close",
+  "description": "Allows only local attached shell windows to close themselves. Main and embedded loopback Harness pages do not receive this permission.",
+  "local": true,
+  "windows": [
+    "window-*",
+    "remote-*"
+  ],
+  "permissions": [
+    "core:window:allow-close"
+  ]
+}

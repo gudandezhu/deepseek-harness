@@ -28,7 +28,8 @@
     "**/*.js",
     "**/*.mjs",
     "**/*.config.ts", // Tool and app configs are outside the repository TypeScript programs.
-    "packages/client/tsdown.client.ts" // Shared client build preset, also outside a TypeScript program.
+    "packages/client/tsdown.client.ts", // Shared client build preset, also outside a TypeScript program.
+    "desktop-tauri/**" // Vendored Tauri desktop has its own ESLint/oxlint configuration.
   ],
   "overrides": [
     {

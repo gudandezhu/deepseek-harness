@@ -14,7 +14,7 @@ const kitRepositoryUrl = new RegExp(`\\bgithub\\.com/${organization}/libreoffice
 const commitCandidate = /(?<![a-z0-9])[\da-f]{7,40}(?![a-z0-9])/gi
 // `python/sdk/uv.lock` is generated package data: wheel content hashes can
 // contain hexadecimal substrings that collide with commit abbreviations.
-const excludedPrefixes = ['vendor/', '.agents/notes/archived/', 'python/sdk/uv.lock']
+const excludedPrefixes = ['vendor/', 'desktop-tauri/', '.agents/notes/archived/', 'python/sdk/uv.lock']
 const gitOutputLimit = 64 * 1024 * 1024
 // One 41-byte line per object; 1.2 million objects produce about 49 MiB.
 const objectListingLimit = 1024 * 1024 * 1024

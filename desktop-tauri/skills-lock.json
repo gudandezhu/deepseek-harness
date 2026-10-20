@@ -1,0 +1,10 @@
+{
+  "version": 1,
+  "skills": {
+    "handle": {
+      "source": "./skills",
+      "sourceType": "local",
+      "computedHash": "1aed1e212d70ccf22c5cab881cef7cf0ad926dcf50bf82b4aa28173bdc1401fb"
+    }
+  }
+}
