@@ -1,4 +1,5 @@
 // @vitest-environment jsdom
+/* eslint-disable no-console -- 测试断言 console.debug 级诊断日志 */
 import type { IframeProps } from './iframe'
 import type { NavbarProps } from './navbar'
 import { act, cleanup, render } from '@testing-library/react'
@@ -43,7 +44,7 @@ vi.mock('./iframe', () => ({
 it('logs the selected shell branch and deduplicates unrelated rerenders without exposing remote URLs', () => {
   window.location.hash = ''
   const view = render(<Webview />)
-  expect(console.warn).toHaveBeenLastCalledWith('[Webview] shell view', expect.objectContaining({
+  expect(console.debug).toHaveBeenLastCalledWith('[Webview] shell view', expect.objectContaining({
     branch: 'iframe',
     status: 'ready',
     remoteMode: false,
@@ -54,23 +55,23 @@ it('logs the selected shell branch and deduplicates unrelated rerenders without 
     iframeError: false,
   }))
   view.rerender(<Webview />)
-  expect(console.warn).toHaveBeenCalledTimes(1)
+  expect(console.debug).toHaveBeenCalledTimes(1)
   mocks.harness.status = 'error'
   view.rerender(<Webview />)
-  expect(console.warn).toHaveBeenLastCalledWith('[Webview] shell view', expect.objectContaining({ branch: 'setup' }))
+  expect(console.debug).toHaveBeenLastCalledWith('[Webview] shell view', expect.objectContaining({ branch: 'setup' }))
   mocks.recovery.recovery.required = true
   view.rerender(<Webview />)
-  expect(console.warn).toHaveBeenLastCalledWith('[Webview] shell view', expect.objectContaining({ branch: 'recovery' }))
+  expect(console.debug).toHaveBeenLastCalledWith('[Webview] shell view', expect.objectContaining({ branch: 'recovery' }))
   mocks.harness.status = 'preinstall'
   view.rerender(<Webview />)
-  expect(console.warn).toHaveBeenLastCalledWith('[Webview] shell view', expect.objectContaining({ branch: 'preinstall' }))
+  expect(console.debug).toHaveBeenLastCalledWith('[Webview] shell view', expect.objectContaining({ branch: 'preinstall' }))
   mocks.harness.status = 'ready'
   mocks.harness.serviceHealthy = false
   view.rerender(<Webview />)
   act(() => navbar().onRemoteChange('https://example.test/?token=secret', null))
-  expect(console.warn).toHaveBeenLastCalledWith('[Webview] shell view', expect.objectContaining({ branch: 'iframe', remoteMode: true, serviceHealthy: false }))
-  expect(JSON.stringify(vi.mocked(console.warn).mock.calls)).not.toContain('secret')
-  expect(console.warn).toHaveBeenCalledTimes(6)
+  expect(console.debug).toHaveBeenLastCalledWith('[Webview] shell view', expect.objectContaining({ branch: 'iframe', remoteMode: true, serviceHealthy: false }))
+  expect(JSON.stringify(vi.mocked(console.debug).mock.calls)).not.toContain('secret')
+  expect(console.debug).toHaveBeenCalledTimes(6)
 })
 
 function navbar() {
@@ -82,7 +83,7 @@ beforeEach(() => {
   window.location.hash = ''
   Object.assign(mocks.harness, { status: 'ready', serviceHealthy: true })
   mocks.recovery.recovery.required = false
-  vi.spyOn(console, 'warn').mockImplementation(() => {})
+  vi.spyOn(console, 'debug').mockImplementation(() => {})
   mocks.navbar.mockClear()
   mocks.setShortcuts.mockClear()
 })

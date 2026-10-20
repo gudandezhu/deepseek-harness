@@ -28,6 +28,7 @@ mod version;
 
 pub use local::{local_core_package_dir, update_local_core};
 // 以下重导出为对外公开 API（部分项当前链路未直接引用，属有意保留，见模块头）。
+#[allow(unused_imports)] // 有意保留的公开 API；部分项只由 Windows 早期启动链路使用。
 pub(crate) use runtime::{
     prepare_active_runtime, prepare_active_runtime_at, RuntimePreparation, RuntimePreparationPaths,
     RuntimeRequiredPlugin,

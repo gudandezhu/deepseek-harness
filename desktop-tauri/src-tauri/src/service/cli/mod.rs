@@ -33,6 +33,7 @@ pub(crate) use path::find_user_pnpm_executable;
 #[cfg(windows)]
 pub(crate) use path::{delete_user_env, notify_environment_change, read_user_env, write_user_env};
 pub use path::{find_user_pnpm, get_bin_dir, pnpm_env_value};
+#[cfg(windows)]
 pub(crate) use path::{find_user_pnpm_from, get_bin_dir_from};
 #[cfg(unix)]
 pub(crate) use path::{strip_rc_block, upsert_rc_block, write_rc_with_backup};

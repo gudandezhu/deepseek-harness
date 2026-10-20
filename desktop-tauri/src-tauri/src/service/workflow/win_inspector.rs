@@ -226,10 +226,6 @@ mod imp {
         Ok(())
     }
 
-    pub(super) fn apply_at(_profile: &std::path::Path) -> Result<(), String> {
-        Ok(())
-    }
-
     /// 非 Windows 无 Git Bash bin 目录。
     pub fn git_bash_bin_dirs() -> Vec<std::path::PathBuf> {
         Vec::new()
@@ -241,6 +237,7 @@ pub fn apply(app_handle: &tauri::AppHandle) -> Result<(), String> {
     imp::apply(app_handle)
 }
 
+#[cfg(windows)]
 pub(crate) fn apply_at(profile: &std::path::Path) -> Result<(), String> {
     imp::apply_at(profile)
 }

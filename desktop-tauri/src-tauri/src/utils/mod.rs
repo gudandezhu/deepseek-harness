@@ -1,4 +1,6 @@
-use std::path::{Path, PathBuf};
+use std::path::Path;
+#[cfg(windows)]
+use std::path::PathBuf;
 
 use tauri::{AppHandle, Manager, Runtime, WebviewWindow};
 

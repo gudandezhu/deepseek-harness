@@ -238,7 +238,8 @@ export function Iframe({ iframeRef, srcOverride = null, borderTint = null }: Ifr
   const documentWaiting = !remoteMode && mounted && !harness.iframeAlive && !showIframeError && !appearancePending
   const branch = !mounted ? 'service-wait' : showIframeError ? 'iframe-error' : remoteLoading ? 'remote-loading' : appearancePending ? 'appearance-wait' : documentWaiting ? 'document-wait' : remoteMode ? 'remote-frame' : 'local-frame'
   useWatch([branch, harness.status, remoteMode, mounted, harness.serviceHealthy, harness.serviceRunning, harness.iframeKey, harness.iframeLoaded, harness.iframeAlive, harness.iframeError, harness.startupPhase, harness.busyAction, appearancePending, documentWaiting, iframeHidden], () => {
-    console.warn('[Iframe] view', {
+    // eslint-disable-next-line no-console -- 状态快照走 debug，默认 RUST_LOG=info 时不打印到终端
+    console.debug('[Iframe] view', {
       branch,
       status: harness.status,
       remoteMode,

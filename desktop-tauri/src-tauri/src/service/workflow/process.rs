@@ -13,7 +13,6 @@ use std::process::Command;
 use std::process::Stdio;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, OnceLock};
-use tauri::AppHandle;
 
 use super::status;
 use super::sweep::harness_pid_path;

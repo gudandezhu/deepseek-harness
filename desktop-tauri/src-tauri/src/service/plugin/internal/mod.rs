@@ -631,6 +631,7 @@ fn emit_phase(
 
 struct InternalPluginCheck {
     manifest: Option<serde_json::Value>,
+    #[cfg_attr(not(windows), allow(dead_code))] // 只由 Windows 早期启动检查读取。
     parsed: Option<ProfilePackageJson>,
     need: Vec<(String, String, PathBuf)>,
     orphans: Vec<String>,
@@ -798,12 +799,14 @@ fn require_running_plugins_ready(
     Ok(())
 }
 
+#[cfg_attr(not(windows), allow(dead_code))] // Windows 早期启动路径使用；测试覆盖其他平台。
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum EarlyPluginState {
     Ready,
     Defer,
 }
 
+#[cfg_attr(not(windows), allow(dead_code))] // Windows 早期启动路径使用；测试覆盖其他平台。
 pub(crate) fn prepare_early_plugins(
     profile: &Path,
     dsh_home: &Path,
@@ -826,6 +829,7 @@ pub(crate) fn prepare_early_plugins(
     )
 }
 
+#[cfg_attr(not(windows), allow(dead_code))] // Windows 早期启动路径使用；测试覆盖其他平台。
 fn prepare_early_plugins_from(
     profile: &Path,
     dsh_home: &Path,

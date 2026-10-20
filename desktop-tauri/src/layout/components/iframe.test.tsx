@@ -1,4 +1,5 @@
 // @vitest-environment jsdom
+/* eslint-disable no-console -- 测试断言 console.debug 级诊断日志 */
 import { mockIPC } from '@tauri-apps/api/mocks'
 import { act, cleanup, render, screen } from '@testing-library/react'
 import { createRef } from 'react'
@@ -19,7 +20,7 @@ vi.mock('@/hooks/use-zoom-factor', () => ({ useZoomFactor: vi.fn() }))
 
 beforeEach(() => {
   vi.useFakeTimers()
-  vi.spyOn(console, 'warn').mockImplementation(() => {})
+  vi.spyOn(console, 'debug').mockImplementation(() => {})
   mockIPC(() => undefined)
   Object.assign(store.harness, {
     serviceUrl: 'http://127.0.0.1:3081',
@@ -50,7 +51,7 @@ it('logs local mount and document states once per transition without adding wait
   const view = render(<Iframe iframeRef={iframeRef} />)
   expect(screen.queryByRole('status')).toBeNull()
   expect(screen.queryByTestId('dsh-shell-iframe')).toBeNull()
-  expect(console.warn).toHaveBeenCalledWith('[Iframe] view', expect.objectContaining({
+  expect(console.debug).toHaveBeenCalledWith('[Iframe] view', expect.objectContaining({
     branch: 'service-wait',
     serviceHealthy: false,
     serviceRunning: true,
@@ -58,7 +59,7 @@ it('logs local mount and document states once per transition without adding wait
     mounted: false,
   }))
   view.rerender(<Iframe iframeRef={iframeRef} />)
-  expect(vi.mocked(console.warn).mock.calls.filter(([tag]) => tag === '[Iframe] view')).toHaveLength(1)
+  expect(vi.mocked(console.debug).mock.calls.filter(([tag]) => tag === '[Iframe] view')).toHaveLength(1)
 
   await act(async () => {
     store.harness.serviceHealthy = true
@@ -66,23 +67,23 @@ it('logs local mount and document states once per transition without adding wait
   const frame = screen.getByTestId<HTMLIFrameElement>('dsh-shell-iframe')
   expect(frame.style.visibility).toBe('visible')
   expect(screen.queryByRole('status')).toBeNull()
-  expect(console.warn).toHaveBeenCalledWith('[Iframe] view', expect.objectContaining({ branch: 'document-wait', mounted: true, iframeAlive: false }))
+  expect(console.debug).toHaveBeenCalledWith('[Iframe] view', expect.objectContaining({ branch: 'document-wait', mounted: true, iframeAlive: false }))
   await act(async () => {
     frame.dispatchEvent(new Event('load'))
   })
-  expect(console.warn).toHaveBeenCalledWith('[Iframe] view', expect.objectContaining({ branch: 'document-wait', iframeLoaded: true }))
+  expect(console.debug).toHaveBeenCalledWith('[Iframe] view', expect.objectContaining({ branch: 'document-wait', iframeLoaded: true }))
   await act(async () => {
     store.harness.markIframeAlive()
   })
   expect(screen.getByTestId('dsh-shell-iframe')).toBe(frame)
-  expect(console.warn).toHaveBeenCalledWith('[Iframe] view', expect.objectContaining({ branch: 'local-frame', iframeAlive: true }))
+  expect(console.debug).toHaveBeenCalledWith('[Iframe] view', expect.objectContaining({ branch: 'local-frame', iframeAlive: true }))
   await act(async () => {
     store.harness.markIframeError()
   })
   expect(screen.getByText('ui.iframe_error')).not.toBeNull()
   expect(frame.style.visibility).toBe('hidden')
-  expect(console.warn).toHaveBeenCalledWith('[Iframe] view', expect.objectContaining({ branch: 'iframe-error', iframeError: true }))
-  expect(JSON.stringify(vi.mocked(console.warn).mock.calls)).not.toContain('secret')
+  expect(console.debug).toHaveBeenCalledWith('[Iframe] view', expect.objectContaining({ branch: 'iframe-error', iframeError: true }))
+  expect(JSON.stringify(vi.mocked(console.debug).mock.calls)).not.toContain('secret')
 })
 
 it('preloads before health, hands live boot to the same frame, and falls back only once on failure', async () => {
@@ -203,24 +204,24 @@ it('diagnoses remote frame visibility across local health and error transitions 
   render(<Iframe iframeRef={createRef()} srcOverride="https://example.test/?token=secret" />)
   expect(screen.getByTestId('dsh-shell-iframe').getAttribute('src')).toBe('https://example.test/?token=secret')
   expect(screen.queryByRole('status')).toBeNull()
-  expect(console.warn).toHaveBeenCalledWith('[Iframe] view', expect.objectContaining({ branch: 'remote-loading', remoteMode: true, serviceHealthy: false, mounted: true, iframeHidden: true }))
+  expect(console.debug).toHaveBeenCalledWith('[Iframe] view', expect.objectContaining({ branch: 'remote-loading', remoteMode: true, serviceHealthy: false, mounted: true, iframeHidden: true }))
   const frame = screen.getByTestId<HTMLIFrameElement>('dsh-shell-iframe')
   await act(async () => {
     frame.dispatchEvent(new Event('load'))
   })
   expect(frame.style.visibility).toBe('visible')
-  expect(console.warn).toHaveBeenCalledWith('[Iframe] view', expect.objectContaining({ branch: 'remote-frame', iframeHidden: false }))
+  expect(console.debug).toHaveBeenCalledWith('[Iframe] view', expect.objectContaining({ branch: 'remote-frame', iframeHidden: false }))
   await act(async () => {
     store.harness.serviceHealthy = true
     store.harness.markIframeError()
   })
   expect(frame.style.visibility).toBe('hidden')
   expect(screen.queryByText('ui.iframe_error')).toBeNull()
-  expect(console.warn).toHaveBeenLastCalledWith('[Iframe] view', expect.objectContaining({
+  expect(console.debug).toHaveBeenLastCalledWith('[Iframe] view', expect.objectContaining({
     branch: 'remote-frame',
     serviceHealthy: true,
     iframeError: true,
     iframeHidden: true,
   }))
-  expect(JSON.stringify(vi.mocked(console.warn).mock.calls)).not.toContain('secret')
+  expect(JSON.stringify(vi.mocked(console.debug).mock.calls)).not.toContain('secret')
 })

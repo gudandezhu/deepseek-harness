@@ -2,7 +2,9 @@ use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex, OnceLock};
 
-use tauri::{AppHandle, Manager, Url, WebviewWindow, Wry};
+use tauri::{AppHandle, WebviewWindow, Wry};
+#[cfg(windows)]
+use tauri::{Manager, Url};
 
 const PRELOAD_QUERY: &str = "_dshPreload";
 const GATE_SCRIPT: &str = include_str!("frontend_preload.js.inc");
@@ -22,6 +24,7 @@ struct WindowPreload {
     serving: bool,
 }
 
+#[cfg_attr(not(windows), allow(dead_code))] // 字段只由 Windows 资源处理器读取；其他平台只构造并存储。
 struct Frontend {
     profile: String,
     origin: String,
@@ -83,6 +86,7 @@ fn asset_path(root: &Path, encoded: &str) -> Option<PathBuf> {
     (target.starts_with(root) && target.is_file()).then_some(target)
 }
 
+#[cfg(windows)]
 fn content_type(path: &Path) -> &'static str {
     match path.extension().and_then(|extension| extension.to_str()) {
         Some("js" | "mjs") => "text/javascript; charset=utf-8",

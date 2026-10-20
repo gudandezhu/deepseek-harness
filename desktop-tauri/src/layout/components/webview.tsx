@@ -45,7 +45,8 @@ export function Webview() {
   const live = status === 'ready' && (remoteMode || serviceHealthy)
   const branch = status === 'ready' ? 'iframe' : status === 'preinstall' ? 'preinstall' : status === 'error' && recovery.required ? 'recovery' : 'setup'
   useWatch([branch, status, remoteMode, serviceHealthy, serviceRunning, iframeKey, iframeLoaded, iframeAlive, iframeError, startupPhase, busyAction], () => {
-    console.warn('[Webview] shell view', {
+    // eslint-disable-next-line no-console -- 状态快照走 debug，默认 RUST_LOG=info 时不打印到终端
+    console.debug('[Webview] shell view', {
       branch,
       status,
       remoteMode,

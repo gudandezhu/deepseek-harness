@@ -70,12 +70,15 @@ pub use install::{
     remove_many, update_many, IncompatibleVersion, PolicyBlockedVersion,
 };
 pub(crate) use installed::{
-    declared_packages, ensure_npmrc_at, ensure_profile_npmrc, installed_name, list_installed,
-    profile_dir, ProfilePackageJson,
+    declared_packages, ensure_profile_npmrc, installed_name, list_installed, profile_dir,
+    ProfilePackageJson,
 };
+#[cfg(windows)]
+pub(crate) use installed::ensure_npmrc_at;
 pub use installed::{list, PreinstallPlugin};
 pub(crate) use internal::cancel as cancel_internal_plugins;
 pub(crate) use internal::ensure as ensure_internal_plugins;
+#[cfg(windows)]
 pub(crate) use internal::{prepare_early_plugins, EarlyPluginState};
 pub(crate) use patch_entries::{strip_active_unresolved_entries, PatchEntryStripReport};
 pub(crate) use patch_guard::preflight_at as preflight_patch_entries_at;
@@ -85,9 +88,11 @@ pub(crate) use patch_guard::{
 };
 pub use preset::repo_url_of;
 pub(crate) use preset::{
-    bundled_plugin_dir, bundled_plugin_dir_from, current_preset_hash, load_presets,
-    preinstall_pending, presets_from_manifest, remove_legacy_bundled_plugins,
+    bundled_plugin_dir, current_preset_hash, load_presets, preinstall_pending,
+    remove_legacy_bundled_plugins,
 };
+#[cfg(windows)]
+pub(crate) use preset::{bundled_plugin_dir_from, presets_from_manifest};
 pub(crate) use process::{acquire_operation_lock, is_process_cleanup_failure};
 pub use recovery::{
     detect as detect_recovery, uninstall as uninstall_recovery, PluginRecoveryInfo,

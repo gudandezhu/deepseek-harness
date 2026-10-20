@@ -1004,7 +1004,8 @@ harness.$subscribe(() => {
   }
   if (!watching) {
     if (iframeWatch) {
-      console.warn('[Harness] iframe watchdog cancelled', context)
+      // eslint-disable-next-line no-console -- 正常取消走 debug，默认 RUST_LOG=info 时不打印到终端
+      console.debug('[Harness] iframe watchdog cancelled', context)
       clearTimeout(iframeWatch.timer)
       iframeWatch = null
     }
@@ -1018,7 +1019,8 @@ harness.$subscribe(() => {
     clearTimeout(iframeWatch.timer)
   }
   const timeoutMs = iframeLoaded ? IFRAME_FRAME_GRACE_TIMEOUT : IFRAME_LOAD_TIMEOUT
-  console.warn('[Harness] iframe watchdog armed', { ...context, timeoutMs })
+  // eslint-disable-next-line no-console -- 正常布防走 debug，只有超时才用 warn
+  console.debug('[Harness] iframe watchdog armed', { ...context, timeoutMs })
   iframeWatch = {
     loaded: iframeLoaded,
     timer: setTimeout(() => {
