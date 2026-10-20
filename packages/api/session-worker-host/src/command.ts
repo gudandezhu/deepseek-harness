@@ -48,6 +48,30 @@ const EXCLUSIVE_VALUE_FLAGS: ReadonlySet<string> = new Set([
 
 /**
  * Build the argv prefix that boots the same CLI this Host runs.
+ *
+ * This derivation assumes the Host itself runs `@deepseek-ai/dsh/lib/bin.js`.
+ * Desktop/Electron does not: its host process is
+ * `@deepseek-ai/dsh-desktop-host`, whose entry takes positional runtime
+ * arguments and would reboot the desktop host instead of a worker profile.
+ * Such an embedder must set the plugin's `command` (and `env`) explicitly:
+ *
+ * ```yaml
+ * - id: session-worker-host
+ *   config:
+ *     command:
+ *       - <electron executable>
+ *       - --expose-internals
+ *       - <runtimeDir>/node_modules/@deepseek-ai/dsh/lib/bin.js
+ *     env:
+ *       ELECTRON_RUN_AS_NODE: '1'
+ * ```
+ *
+ * `runtimeDir` is the Desktop host's `process.argv[2]`; the CLI entry is
+ * `@deepseek-ai/dsh`'s `bin` field. `DSH_HOME` and provider credentials travel
+ * through the default forwarded environment. This desktop path has no
+ * automated test in this repository: every e2e host here boots the CLI
+ * directly, so a packaged Electron launch must be verified by hand.
+ *
  * @param execPath - Node executable.
  * @param execArgv - Node flags of the Host process.
  * @param entry - CLI entry point (`process.argv[1]`).
