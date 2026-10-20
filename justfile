@@ -13,14 +13,10 @@ alias dev := dev-web
 dev-web *ARGS:
     {{pnpm}} run dev:web {{ARGS}}
 
-# Start the vendored Tauri desktop: Vite plus the Tauri dev window.
-dev-tauri:
+# Start the Tauri desktop: Vite plus the Tauri dev window.
+dev-desktop:
     cd desktop-tauri && {{pnpm}} tauri dev
 
-# Build the vendored Tauri desktop as an unsigned debug app.
-build-tauri:
+# Build the Tauri desktop as an unsigned debug app.
+build-desktop:
     cd desktop-tauri && {{pnpm}} tauri build --debug
-
-# Forward any command to the vendored Tauri CLI.
-tauri *ARGS:
-    cd desktop-tauri && {{pnpm}} tauri {{ARGS}}
