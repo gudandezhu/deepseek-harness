@@ -43,6 +43,9 @@ const SESSION_WRITES: Readonly<Record<string, RoutedWrite>> = {
   'session/rename': requestField('sessionId'),
   'session/selectModel': requestField('sessionId'),
   'session/updateQueue': requestField('sessionId'),
+  // A fork reads the source log and writes the child in the owning worker, so
+  // the child is durable before the browser sees its identity.
+  'session/fork': requestField('sessionId'),
   'session/create': {
     session: (args) => {
       const request = requestOf(args)

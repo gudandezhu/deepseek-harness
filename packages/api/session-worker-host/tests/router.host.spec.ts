@@ -73,6 +73,13 @@ describe('Session worker host router', () => {
     expect(call).not.toHaveBeenCalled()
   })
 
+  it('routes a fork to the worker that owns the source Session', async () => {
+    const { router, call, acquired } = setup()
+    await router.dispatch?.('session/fork', payload({ request: { sessionId } }), new AbortController().signal, owner)
+    expect(acquired).toHaveBeenCalledWith(sessionId)
+    expect(call).toHaveBeenCalledWith('session/fork', { request: { sessionId } }, { signal: expect.anything() })
+  })
+
   it('uses an existing worker without acquiring a new one', async () => {
     const { router, call, acquired, get } = setup({ live: true })
     await router.dispatch?.('session/rename', payload({ request: { sessionId, title: 'new' } }), new AbortController().signal, owner)

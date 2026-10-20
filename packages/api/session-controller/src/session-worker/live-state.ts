@@ -100,6 +100,7 @@ interface LiveSession {
   projections: SessionProjectionBaseline
   assistant: SessionAssistantStreamAccumulator
   running: boolean
+  hasTurn: boolean
   follow: SessionWorkerStreamTransport | undefined
   control: SessionWorkerStreamTransport | undefined
 }
@@ -157,6 +158,7 @@ export class SessionWorkerLives {
         projections: { asOfSeq: -1, values: {} },
         assistant: new SessionAssistantStreamAccumulator(),
         running: false,
+        hasTurn: false,
         follow: undefined,
         control: undefined,
       }
@@ -180,6 +182,7 @@ export class SessionWorkerLives {
     state.windowHasMore = false
     state.dropped = false
     state.running = false
+    state.hasTurn = false
     this.followWorker(state, worker, generation, windowMessages)
     this.followControl(state, worker, generation)
     void worker.exited.then(() => {
@@ -262,7 +265,7 @@ export class SessionWorkerLives {
           updatedAt: state.header.createdAt,
           agentAvailable: state.worker !== undefined,
           running: state.running,
-          blank: state.lastSeq < 0,
+          blank: !state.hasTurn,
           formatStatus: 'current',
           ...(state.header.cwd === undefined ? {} : { cwd: state.header.cwd }),
           ...(projections === undefined ? {} : { projections }),
@@ -345,6 +348,7 @@ export class SessionWorkerLives {
     state.head = 0
     state.baseSeq = events[0]?.seq ?? 0
     state.lastSeq = typeof frame['cursor'] === 'number' ? frame['cursor'] : state.baseSeq - 1
+    state.hasTurn = events.some(entry => entry.type === 'turn/start')
     state.windowHasMore = frame['hasMore'] === true
     state.dropped = false
     const projections = frame['projections']
@@ -380,9 +384,12 @@ export class SessionWorkerLives {
         state.head = 0
       }
     }
-    if (event.type === 'turn/start' && !state.running) {
-      state.running = true
-      this.ctx.emit('api-session/status', state.sessionId, true)
+    if (event.type === 'turn/start') {
+      state.hasTurn = true
+      if (!state.running) {
+        state.running = true
+        this.ctx.emit('api-session/status', state.sessionId, true)
+      }
     } else if (event.type === 'turn/end' && state.running) {
       state.running = false
       this.ctx.emit('api-session/status', state.sessionId, false)

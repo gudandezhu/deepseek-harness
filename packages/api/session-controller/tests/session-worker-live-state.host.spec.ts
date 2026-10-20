@@ -166,7 +166,10 @@ describe('Session worker live state', () => {
       type: 'snapshot',
       header: header(),
       cursor: 2,
-      records: [{ type: 'event', event: event(2, 'assistant/message') }],
+      records: [
+        { type: 'event', event: event(1, 'turn/start') },
+        { type: 'event', event: event(2, 'assistant/message') },
+      ],
       hasMore: false,
       projections: { asOfSeq: 2, values: { title: 'live' } },
       assistantStream: { revision: 0 },
