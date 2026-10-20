@@ -75,6 +75,21 @@ const SESSION_WRITES: Readonly<Record<string, RoutedWrite>> = {
 }
 
 /**
+ * Passive stream endpoints served by the worker that owns the Session; a cold
+ * Session falls through to the Host's own empty registry.
+ */
+const SESSION_STREAMS: Readonly<Record<string, (args: Readonly<Record<string, unknown>>) => SessionId | undefined>> = {
+  'job/list': (args) => {
+    const request = requestOf(args)
+    return request === undefined ? undefined : readId(request, 'sessionId')
+  },
+  'job/follow': (args) => {
+    const request = requestOf(args)
+    return request === undefined ? undefined : readId(request, 'sessionId')
+  },
+}
+
+/**
  * Host endpoint router for one `sessionWorkerRouter` registration.
  *
  * A routed call never resolves a Typert descriptor or a local Agent; the
@@ -147,6 +162,38 @@ export class SessionWorkerRouter implements TypertEndpointRouter, SessionReminde
     return result.value as SessionDeliverValue
   }
 
+  /**
+   * Route a passive job observation stream to the worker that owns the
+   * Session. No worker is spawned: a cold Session is served by the Host's own
+   * empty job registry, which is the correct cold result.
+   * @param endpoint - canonical Remote stream endpoint.
+   * @param payload - complete wire payload, normally `{ args }`.
+   * @param uplink - carrier uplink; job observation never reads it.
+   * @param signal - carrier cancellation.
+   * @param peer - caller the stream speaks for.
+   * @returns the worker stream, or undefined when the Host owns the answer.
+   */
+  stream(
+    endpoint: string,
+    payload: unknown,
+    uplink: AsyncIterable<unknown>,
+    signal: AbortSignal,
+    peer: PeerScope,
+  ): AsyncIterable<unknown> | undefined {
+    void uplink
+    const readSession = SESSION_STREAMS[endpoint]
+    if (readSession === undefined) return undefined
+    const args = argsOf(payload)
+    if (args === undefined) return undefined
+    const sessionId = readSession(args)
+    if (sessionId === undefined) return undefined
+    const live = this.supervisor.get(sessionId)
+    if (live === undefined) return undefined
+    const reason = this.denial(endpoint, sessionId, args, peer)
+    if (reason !== undefined) return failingStream(endpoint, reason)
+    return live.open(endpoint, args, { signal })
+  }
+
   private async forward(
     endpoint: string,
     route: RoutedWrite,
@@ -177,6 +224,24 @@ export class SessionWorkerRouter implements TypertEndpointRouter, SessionReminde
     args: Readonly<Record<string, unknown>>,
     peer: PeerScope,
   ): ConnectionRpcResult<never> | undefined {
+    const reason = this.denial(endpoint, sessionId, args, peer)
+    if (reason === undefined) return undefined
+    return {
+      ok: false,
+      error: {
+        code: 'remote-access/denied',
+        message: `remote access: ${endpoint}: access denied (${reason})`,
+        details: { action: endpoint, reason },
+      },
+    }
+  }
+
+  private denial(
+    endpoint: string,
+    sessionId: SessionId,
+    args: Readonly<Record<string, unknown>>,
+    peer: PeerScope,
+  ): string | undefined {
     // The owner short-circuits inside `decide`, so this only consults policies
     // for non-owner callers.
     const decision = this.ctx.remoteAccess.decide({
@@ -185,16 +250,21 @@ export class SessionWorkerRouter implements TypertEndpointRouter, SessionReminde
       resources: [{ kind: 'session', id: sessionId }],
       args,
     })
-    if (decision.kind !== 'deny') return undefined
-    return {
-      ok: false,
-      error: {
-        code: 'remote-access/denied',
-        message: `remote access: ${endpoint}: access denied (${decision.reason})`,
-        details: { action: endpoint, reason: decision.reason },
-      },
-    }
+    return decision.kind === 'deny' ? decision.reason : undefined
   }
+}
+
+/**
+ * A stream the Host refuses before any worker sees it. The first read raises
+ * the same denial a unary call would return.
+ * @param endpoint - canonical Remote stream endpoint.
+ * @param reason - Host access-policy reason.
+ * @returns an iterable that fails on its first step.
+ */
+function failingStream(endpoint: string, reason: string): AsyncIterable<never> {
+  return (async function* (): AsyncGenerator<never> {
+    throw new Error(`remote access: ${endpoint}: access denied (${reason})`)
+  })()
 }
 
 /** Session Remote methods carry one `request` object holding the identity. */

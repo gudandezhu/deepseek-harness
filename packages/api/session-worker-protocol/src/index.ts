@@ -216,6 +216,11 @@ export type SessionWorkerFrame = HostToWorkerFrame | WorkerToHostFrame
 export const PASSIVE_STREAM_ENDPOINTS: ReadonlySet<string> = new Set([
   'session/follow',
   'session/control',
+  // Job observation mirrors the worker's registry; a browser watching output
+  // must not postpone reclaim while the job itself is already accounted for as
+  // activity.
+  'job/list',
+  'job/follow',
   '$events',
 ])
 

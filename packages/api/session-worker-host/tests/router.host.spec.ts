@@ -20,13 +20,14 @@ function setup(options: { readonly live?: boolean; readonly decision?: { kind: '
     decide: () => options.decision ?? { kind: 'allow' },
   } as never)
   const call = vi.fn(async (..._args: unknown[]): Promise<ConnectionRpcResult<unknown>> => ({ ok: true, value: { accepted: true } }))
-  const handle = { sessionId, pid: 1, exited: Promise.resolve(), call, open: vi.fn() } as unknown as SessionWorkerHandle
+  const open = vi.fn(() => (async function* () {})())
+  const handle = { sessionId, pid: 1, exited: Promise.resolve(), call, open } as unknown as SessionWorkerHandle
   const get = vi.fn(() => options.live === true ? handle : undefined)
   const acquired = vi.fn(async () => handle)
   const supervisor = { get, acquire: acquired } as unknown as SessionWorkerSupervisor
   const attach = vi.fn()
   const lives = { attach } as unknown as SessionWorkerLives
-  return { router: new SessionWorkerRouter(ctx, supervisor, lives), call, get, acquired, attach }
+  return { router: new SessionWorkerRouter(ctx, supervisor, lives), call, open, get, acquired, attach }
 }
 
 describe('Session worker host router', () => {
@@ -100,6 +101,37 @@ describe('Session worker host router', () => {
       error: { code: 'session/not-found', message: 'gone', details: {} },
     })
     await expect(router.deliverReminder(sessionId, 'reminder text')).rejects.toThrow('gone')
+  })
+
+  it('routes job observation streams to a live owner and leaves cold Sessions to the Host', () => {
+    const cold = setup()
+    const signal = new AbortController().signal
+    const uplink = (async function* () {})()
+    expect(cold.router.claims('job/list')).toBe(false)
+    expect(cold.router.stream('job/list', payload({ request: { sessionId } }), uplink, signal, owner))
+      .toBeUndefined()
+    expect(cold.router.stream('job/follow', payload({ request: { sessionId, jobId: 'job-1' } }), uplink, signal, owner))
+      .toBeUndefined()
+
+    const live = setup({ live: true })
+    expect(live.router.stream('job/list', payload({ request: { sessionId } }), uplink, signal, owner))
+      .toBeDefined()
+    expect(live.router.stream('job/follow', payload({ request: { sessionId, jobId: 'job-1' } }), uplink, signal, owner))
+      .toBeDefined()
+    expect(live.open).toHaveBeenCalledWith('job/list', { request: { sessionId } }, { signal })
+    expect(live.open).toHaveBeenCalledWith('job/follow', { request: { sessionId, jobId: 'job-1' } }, { signal })
+    expect(live.acquired).not.toHaveBeenCalled()
+  })
+
+  it('fails a denied job stream before opening a worker stream', async () => {
+    const { router, open } = setup({ live: true, decision: { kind: 'deny', reason: 'no-allow' } })
+    const stream = router.stream(
+      'job/list', payload({ request: { sessionId } }), (async function* () {})(), new AbortController().signal, owner,
+    )
+    expect(stream).toBeDefined()
+    const iterator = (stream as AsyncIterable<unknown>)[Symbol.asyncIterator]()
+    await expect(iterator.next()).rejects.toThrow('access denied')
+    expect(open).not.toHaveBeenCalled()
   })
 
   it('uses an existing worker without acquiring a new one', async () => {
