@@ -40,6 +40,8 @@ For portable desktop/plugin development, use separate terminals for the plugin w
 
 From the deepseek-harness repository root, `just dev-desktop` generates `desktop-tauri/.local-kernel`, points `DSH_CLI_PATH` at this repository's `apps/cli`, and starts `tauri dev`. The shell therefore runs the fork's `dsh web` (including its session workers) instead of the bundled core. Rust hot reload and Vite HMR are unchanged.
 
+The same command sets `DSH_HOME` to `${DSH_HOME:-$HOME/.dsh}`, so the desktop and the CLI share one harness home. Model providers and the default model live in `$DSH_HOME/cordis.patch.yml`; API keys and relay endpoints live in `$DSH_HOME/.env`, which the harness loads as its home layer regardless of the working directory.
+
 `pnpm typecheck` checks workspace package sources through `tsconfig.typecheck.json`, so a fresh checkout needs only `pnpm install`, without generated declarations or a running plugin watcher. Build and runtime resolution still use package exports; CI builds the shared packages and tests their packaged entrypoints separately.
 
 **Build protection:** [AGENTS.md](<../AGENTS.md>) forbids builds during plugin changes. `pnpm build:plugins`, `pnpm build`, `pnpm build:debug`, and `pnpm tauri build` are deliberate artifact-preparation/release actions; `pnpm build` also invokes the plugin prebuild.

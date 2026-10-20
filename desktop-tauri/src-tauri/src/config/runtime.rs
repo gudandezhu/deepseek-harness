@@ -549,24 +549,23 @@ pub(crate) fn user_home_dir() -> Option<PathBuf> {
 /// Harness 用户数据目录（$DSH_HOME）。
 ///
 /// 与官方 dsh（`${DSH_HOME:-$HOME/.dsh}`）保持一致：
-/// - release 构建使用非空环境变量 `DSH_HOME`，否则默认 `~/.dsh`；
-/// - debug 构建始终使用 `~/.dsh.dev`，忽略从旧 desktop checkout、终端或 release
-///   shim 继承的 `DSH_HOME`，避免两个构建误用同一 profile 并发改写；
-/// - debug 子进程由 launch 显式收到同一个 `~/.dsh.dev`，开发版与生产版的会话、档案、
-///   插件与主题因此互不干扰。
+/// - 非空环境变量 `DSH_HOME` 在 release 和 debug 构建里都优先，启动器用它把桌面端
+///   指向与 CLI 相同的数据目录（模型、密钥、档案只有一份）；
+/// - 未设置时 release 用 `~/.dsh`，debug 用 `~/.dsh.dev`，保留开发隔离能力；
+/// - debug 子进程由 launch 显式收到同一个解析结果。
 pub fn get_dsh_data_path<R: Runtime>(_app_handle: &AppHandle<R>) -> PathBuf {
     dsh_data_path_from_env()
 }
 
 pub(crate) fn dsh_data_path_from_env() -> PathBuf {
+    if let Some(home) = std::env::var_os("DSH_HOME") {
+        if !home.is_empty() {
+            return PathBuf::from(home);
+        }
+    }
     let dir_name = if cfg!(debug_assertions) {
         DSH_HOME_DEV_DIR_NAME
     } else {
-        if let Some(home) = std::env::var_os("DSH_HOME") {
-            if !home.is_empty() {
-                return PathBuf::from(home);
-            }
-        }
         DSH_HOME_DIR_NAME
     };
     user_home_dir()
@@ -691,8 +690,8 @@ pub fn runtime_info<R: Runtime>(app: &AppHandle<R>, port: u16) -> RuntimeInfo {
         dsh_version: get_dsh_version(app),
         node_version: get_active_node_version(),
         service_url: get_dsh_service_url(port),
-        // 用户数据所在目录 = $DSH_HOME（release 为官方 ~/.dsh，debug 为独立
-        // ~/.dsh.dev，见 get_dsh_data_path），不再是 AppData
+        // 用户数据所在目录 = $DSH_HOME（显式环境变量优先；未设置时 release 为
+        // ~/.dsh，debug 为 ~/.dsh.dev，见 get_dsh_data_path），不再是 AppData
         data_dir: get_dsh_data_path(app).to_string_lossy().into_owned(),
         log_path: get_service_log_path(app).to_string_lossy().into_owned(),
         platform: env::consts::OS.to_string(),

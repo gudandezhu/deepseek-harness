@@ -119,9 +119,9 @@ local-kernel:
     @printf '#!/bin/sh\nexec node "%s/apps/cli/lib/bin.js" "$@"\n' "{{justfile_directory()}}" > "{{kernel}}/bin/dsh"
     @chmod +x "{{kernel}}/bin/dsh"
 
-# 启动 Tauri 桌面：Vite + Tauri dev 窗口，内核使用本仓库的 dsh。
+# 启动 Tauri 桌面：Vite + Tauri dev 窗口，内核使用本仓库的 dsh，并共用 CLI 的 $DSH_HOME。
 dev-desktop: local-kernel
-    cd desktop-tauri && DSH_CLI_PATH="{{kernel}}/bin/dsh" ./node_modules/.bin/tauri dev
+    cd desktop-tauri && DSH_HOME="${DSH_HOME:-$HOME/.dsh}" DSH_CLI_PATH="{{kernel}}/bin/dsh" ./node_modules/.bin/tauri dev
 
 # 构建未签名的 debug 桌面应用。
 # `--no-default-features` 与 `tauri dev` 对齐；build 模式额外的 `tauri/custom-protocol`
