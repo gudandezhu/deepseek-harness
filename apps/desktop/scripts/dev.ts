@@ -120,7 +120,7 @@ async function main(): Promise<void> {
     release,
     target: resolveDesktopBuildTarget(),
   })
-  await preparePrimaryRuntime()
+  await preparePrimaryRuntime({ deferSmoke: true, reuse: true })
   await launchElectron()
 }
 

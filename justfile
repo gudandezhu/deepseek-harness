@@ -13,6 +13,11 @@ alias dev := dev-web
 dev-web *ARGS:
     {{pnpm}} run dev:web {{ARGS}}
 
+# Launch the built Desktop artifacts without rebuilding or opening DevTools.
+# Runs the dev script directly so pnpm's process tree does not add startup memory.
+dev-desktop:
+    DSH_DESKTOP_OPEN_DEVTOOLS=0 node --import tsx/esm apps/desktop/scripts/dev.ts --skip-build
+
 # Build, then launch Desktop.
-dev-desktop *ARGS:
-    {{pnpm}} run dev:desktop {{ARGS}}
+build-desktop:
+    {{pnpm}} run dev:desktop
