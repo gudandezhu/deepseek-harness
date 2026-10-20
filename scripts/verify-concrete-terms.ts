@@ -49,10 +49,20 @@ export function findConcreteTermViolations(file: string, source: string): Concre
   return violations
 }
 
+/** `git ls-files` output exceeds Node's 1 MiB spawnSync default once the vendored desktop tree is tracked. */
+const TRACKED_FILES_MAX_BUFFER = 64 * 1024 * 1024
+
+/** Vendored desktop shell: an independent pnpm workspace carrying its own upstream documentation. */
+const EXCLUDED_PREFIXES = ['desktop-tauri/']
+
 function trackedFiles(repoRoot: string): string[] {
-  const files = execFileSync('git', ['ls-files', '-z'], { cwd: repoRoot, encoding: 'utf8' })
+  const files = execFileSync('git', ['ls-files', '-z'], {
+    cwd: repoRoot,
+    encoding: 'utf8',
+    maxBuffer: TRACKED_FILES_MAX_BUFFER,
+  })
     .split('\0')
-    .filter(file => file !== '')
+    .filter(file => file !== '' && !EXCLUDED_PREFIXES.some(prefix => file.startsWith(prefix)))
   if (!files.includes('AGENTS.md')
     || !files.some(file => file.startsWith('packages/'))
     || !files.some(file => file.startsWith('docs/'))

@@ -65,8 +65,15 @@ export function findUnavailableRepositoryReferences(file: string, source: string
   return references
 }
 
+/** `git ls-files` output exceeds Node's 1 MiB spawnSync default once the vendored desktop tree is tracked. */
+const TRACKED_FILES_MAX_BUFFER = 64 * 1024 * 1024
+
 function trackedFiles(repoRoot: string): string[] {
-  return execFileSync('git', ['ls-files', '-z'], { cwd: repoRoot, encoding: 'utf8' })
+  return execFileSync('git', ['ls-files', '-z'], {
+    cwd: repoRoot,
+    encoding: 'utf8',
+    maxBuffer: TRACKED_FILES_MAX_BUFFER,
+  })
     .split('\0')
     .filter(file => file !== '')
 }
