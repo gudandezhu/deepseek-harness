@@ -230,6 +230,7 @@ async function authenticate(url: string): Promise<string> {
   const response = await fetch(url, { redirect: 'manual' })
   const setCookie = response.headers.getSetCookie()[0]
     ?? response.headers.get('set-cookie')
+    ?? undefined
   if (setCookie === undefined) throw new Error(`web host did not issue a browser cookie (${String(response.status)})`)
   return setCookie.split(';', 1)[0] as string
 }
