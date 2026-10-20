@@ -10,6 +10,8 @@
  */
 
 import type { Context } from '@deepseek-ai/cordis'
+import type {} from '@deepseek-ai/dsh-workspace'
+import type {} from '@deepseek-ai/dsh-workspace/types'
 import z from '@deepseek-ai/schemastery'
 import {
   DEFAULT_LIVE_EVENT_LIMIT,
@@ -33,6 +35,13 @@ export {
   workerCommand,
 } from './command.ts'
 export { SessionWorkerRouter } from './router.ts'
+
+declare module '@deepseek-ai/dsh-workspace/types' {
+  interface SessionActivityKindMap {
+    /** A session worker is inside a turn for this Session. */
+    'session-worker': true
+  }
+}
 
 /** Stable Cordis plugin name. */
 export const name = 'session-worker-host'
@@ -101,6 +110,19 @@ export function apply(ctx: Context, config: Config = {}): void {
     const supervisor = workerCtx.get('sessionWorkers')
     if (supervisor === undefined) return
     ctx.provide('sessionWorkerRouter', new SessionWorkerRouter(workerCtx, supervisor, lives))
+  })
+  // Archive admission lives with the Workspace registry: report a running
+  // worker turn so an archive without `stopActivity` is refused, and stop the
+  // worker when the caller asks for that. An idle worker is not activity; it
+  // reclaims itself.
+  ctx.on('workspace/session-activity', async ({ sessionId }, next) => {
+    const activity = await next()
+    return lives.view(sessionId)?.running === true
+      ? [...activity, { kind: 'session-worker' }]
+      : activity
+  })
+  ctx.on('workspace/session-stop', async ({ sessionId }) => {
+    await ctx.get('sessionWorkers')?.shutdown(sessionId)
   })
 }
 
