@@ -44,7 +44,10 @@ describe('Session worker host router', () => {
       .resolves.toEqual({ ok: true, value: { accepted: true } })
     expect(acquired).toHaveBeenCalledWith(sessionId)
     expect(attach).toHaveBeenCalledWith(sessionId, expect.anything())
-    expect(call).toHaveBeenCalledWith('session/prompt', { request: { sessionId } }, { signal: expect.anything() })
+    const forwarded = call.mock.calls[0] as unknown as [string, unknown, { readonly signal: AbortSignal }]
+    expect(forwarded[0]).toBe('session/prompt')
+    expect(forwarded[1]).toEqual({ request: { sessionId } })
+    expect(forwarded[2].signal).toBeInstanceOf(AbortSignal)
   })
 
   it('leaves a cold cancel and a cold job kill to the host', async () => {
@@ -78,7 +81,10 @@ describe('Session worker host router', () => {
     const { router, call, acquired } = setup()
     await router.dispatch?.('session/fork', payload({ request: { sessionId } }), new AbortController().signal, owner)
     expect(acquired).toHaveBeenCalledWith(sessionId)
-    expect(call).toHaveBeenCalledWith('session/fork', { request: { sessionId } }, { signal: expect.anything() })
+    const forwarded = call.mock.calls[0] as unknown as [string, unknown, { readonly signal: AbortSignal }]
+    expect(forwarded[0]).toBe('session/fork')
+    expect(forwarded[1]).toEqual({ request: { sessionId } })
+    expect(forwarded[2].signal).toBeInstanceOf(AbortSignal)
   })
 
   it('delivers a Schedule reminder to the worker that owns the Session', async () => {
@@ -87,11 +93,10 @@ describe('Session worker host router', () => {
     await expect(router.deliverReminder(sessionId, 'reminder text')).resolves.toEqual({ accepted: true })
     expect(acquired).toHaveBeenCalledWith(sessionId)
     expect(attach).toHaveBeenCalledWith(sessionId, expect.anything())
-    expect(call).toHaveBeenCalledWith(
-      'session/deliverReminder',
-      { request: { sessionId, text: 'reminder text' } },
-      { signal: expect.anything() },
-    )
+    const forwarded = call.mock.calls[0] as unknown as [string, unknown, { readonly signal: AbortSignal }]
+    expect(forwarded[0]).toBe('session/deliverReminder')
+    expect(forwarded[1]).toEqual({ request: { sessionId, text: 'reminder text' } })
+    expect(forwarded[2].signal).toBeInstanceOf(AbortSignal)
   })
 
   it('surfaces a worker delivery failure to the Schedule caller', async () => {

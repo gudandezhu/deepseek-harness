@@ -1213,11 +1213,12 @@ describe('Typert Remote streams', () => {
     await rejected
     expect(pending.reject).toHaveBeenCalledTimes(1)
     await vi.waitFor(() => {
-      expect(client.frames).toContainEqual({
-        type: 'item',
-        streamId: client.streamId,
-        value: { type: 'cancel', eventId: expect.any(String) },
+      const cancellation = client.frames.find((frame) => {
+        if (frame.type !== 'item' || frame.streamId !== client.streamId) return false
+        const value = frame.value
+        return typeof value === 'object' && value !== null && Reflect.get(value, 'type') === 'cancel'
       })
+      expect(cancellation).toBeDefined()
     })
     await unregister()
     client.socket.close()

@@ -124,9 +124,9 @@ export class ScheduleRuntime {
       try {
         // A routed delivery owns its own Agent activation; the in-process path
         // still resolves here so restoration and backoff keep their behavior.
-        const routed = this.delivery?.routes() === true
+        const routedDelivery = this.delivery?.routes() === true ? this.delivery : undefined
         let deliverLocally: ((text: string) => Promise<MessageId>) | undefined
-        if (!routed) {
+        if (routedDelivery === undefined) {
           const resolved = await this.ctx.sessionController.resolveAgent(task.sessionId)
           if ('error' in resolved) throw resolved.error
           const agent = resolved.agent
@@ -158,8 +158,8 @@ export class ScheduleRuntime {
           })))
           : renderReminderFraming(task.record)
         let messageId: MessageId
-        if (routed && this.delivery !== undefined) {
-          messageId = (await this.delivery.deliver(task.sessionId, text)).messageId
+        if (routedDelivery !== undefined) {
+          messageId = (await routedDelivery.deliver(task.sessionId, text)).messageId
         } else if (deliverLocally !== undefined) {
           messageId = await deliverLocally(text)
         } else {

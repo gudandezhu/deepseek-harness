@@ -38,7 +38,7 @@ export class SessionControlController {
         event: () => {},
         assistant: () => {},
         generation: () => {},
-        projection: update => this.broadcast({ type: 'projection', ...update }),
+        projection: (update) => { this.broadcast({ type: 'projection', ...update }) },
       }), 'session-controller.control.workers')
     })
     ctx.effect(() => () => {
