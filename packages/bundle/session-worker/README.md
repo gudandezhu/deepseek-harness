@@ -29,6 +29,7 @@ No direct effect; the composed model provider owns KV-cache behavior.
 
 - The bundle only serves as a worker; it exposes no HTTP surface and cannot launch as the user-facing Web app.
 - It expects the Host supervisor to provide the inherited fd 7 control channel and to route Session writes.
+- Workspace membership is Host-owned: this profile creates and forks Sessions with `attachWorkspaceSessions: false`, and the Host writes membership after a routed call succeeds.
 - Electron hosts derive the worker command from the desktop runtime directory; a different embedder must configure it explicitly.
 
 <a id="dev-note"></a>

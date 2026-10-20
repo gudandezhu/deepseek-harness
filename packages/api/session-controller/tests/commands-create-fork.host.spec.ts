@@ -108,6 +108,30 @@ describe('Session creation failures', () => {
     await failed.fiber.dispose()
   })
 
+  it('leaves Workspace membership to the process that writes it', async () => {
+    const ctx = await baseContext()
+    const attachSession = vi.fn(() => Promise.resolve())
+    const workspace = {
+      id: 'workspace-1' as WorkspaceId,
+      path: '/workspace',
+      attachSession,
+    } as unknown as Workspace
+    ctx.provide('workspaceRegistry', { get: () => workspace, list: () => [workspace] } as never)
+    const controller = new SessionCommandController(
+      ctx,
+      controllerAgents(ctx, { createSession: publishedSession(ctx, SessionId('worker-session')) }),
+      '/default',
+      false,
+    )
+
+    await expect(controller.create({
+      sessionId: SessionId('worker-session'),
+      workspaceId: workspace.id,
+    })).resolves.toEqual({ sessionId: 'worker-session' })
+    expect(attachSession).not.toHaveBeenCalled()
+    await ctx.fiber.dispose()
+  })
+
   it.each([
     {
       error: new RemoteError(

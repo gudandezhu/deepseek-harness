@@ -120,6 +120,18 @@ export interface Workspace {
   attachSession(sessionId: SessionId): Promise<void>
 
   /**
+   * Prepend a session whose placement the caller already established, without
+   * re-reading its header. A session worker creates and validates the Session;
+   * the Host records membership here because only its registry feeds browsers,
+   * and a Session that has not written its first log line yet has no header to
+   * validate. An already accounted id resolves without writing, aside from the
+   * durable filtered-candidate prune every accepted mutation performs.
+   * @param sessionId - The Session to record at {@link path}.
+   * @returns resolution after durability.
+   */
+  adoptSession(sessionId: SessionId): Promise<void>
+
+  /**
    * Move an accounted session within the manual order, DOM-insertBefore-like:
    * with an anchor the session lands before it, without one it appends to the
    * end. Only the moved id changes position. A session or anchor absent from

@@ -149,6 +149,16 @@ export class WorkspaceEntity implements Workspace {
       : { ...record, sessionIds: [sessionId, ...record.sessionIds] })
   }
 
+  async adoptSession(sessionId: SessionId): Promise<void> {
+    // The caller established placement: a create naming this Workspace fixes
+    // the cwd to `path`, and a fork inherits its source's accounted cwd. Record
+    // the canonical path so the candidate filter keeps the id, then prepend it.
+    this.host.rememberSessionPath(sessionId, this.record.path)
+    await this.mutate(record => record.sessionIds.includes(sessionId)
+      ? record
+      : { ...record, sessionIds: [sessionId, ...record.sessionIds] })
+  }
+
   async insertSessionBefore(sessionId: SessionId, beforeSessionId?: SessionId): Promise<void> {
     await this.mutate((record) => {
       if (!record.sessionIds.includes(sessionId)) {

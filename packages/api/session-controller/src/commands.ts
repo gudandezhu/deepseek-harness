@@ -95,11 +95,14 @@ export class SessionCommandController {
    * @param ctx - Host context carrying Agent, model, attachment, title, and Workspace services.
    * @param agents - sole owner of create, resume, and Session-local model selection.
    * @param defaultCwd - project directory used when create names neither a Workspace nor a cwd.
+   * @param attachWorkspaceSessions - whether this process writes Workspace membership;
+   * a session worker leaves that durable write to its Host.
    */
   constructor(
     private readonly ctx: Context,
     private readonly agents: ApiSessionAgentController,
     private readonly defaultCwd: string,
+    private readonly attachWorkspaceSessions: boolean = true,
   ) {}
 
   /**
@@ -135,7 +138,7 @@ export class SessionCommandController {
       this.rejectCreation(error)
     }
     const sessionId = created.agent.id
-    if (workspace !== undefined) {
+    if (workspace !== undefined && this.attachWorkspaceSessions) {
       try {
         await workspace.attachSession(sessionId)
       } catch (error) {
@@ -260,14 +263,16 @@ export class SessionCommandController {
     }
     const seed = buildForkSeed(source.events, boundary)
     let workspace: Workspace | undefined
-    try {
-      workspace = await this.forkWorkspace(source.header)
-    } catch (error) {
-      throw new RemoteError(
-        'gateway/internal',
-        `failed to resolve fork workspace for session "${request.sessionId}": ${String(error)}`,
-        {},
-      )
+    if (this.attachWorkspaceSessions) {
+      try {
+        workspace = await resolveSessionWorkspace(this.ctx, source.header)
+      } catch (error) {
+        throw new RemoteError(
+          'gateway/internal',
+          `failed to resolve fork workspace for session "${request.sessionId}": ${String(error)}`,
+          {},
+        )
+      }
     }
     const childId = brandString<SessionId>(`session-${randomUUID()}`)
     const composition = await this.agents.composeAgent(this.agents.presetForObservation(source))
@@ -295,7 +300,7 @@ export class SessionCommandController {
         {},
       )
     }
-    if (workspace !== undefined) {
+    if (workspace !== undefined && this.attachWorkspaceSessions) {
       try {
         await workspace.attachSession(childId)
       } catch (error) {
@@ -546,18 +551,45 @@ export class SessionCommandController {
     const inspected = await inspectApiSession(this.ctx, sessionId)
     return { id: inspected.meta.id, header: inspected.meta, events: inspected.events }
   }
+}
 
-  private async forkWorkspace(source: SessionHeader): Promise<Workspace | undefined> {
-    const workspaces = this.ctx.workspaceRegistry.list()
-    const direct = workspaces.find(workspace => workspace.sessionIds.includes(source.id))
-    if (direct !== undefined || source.origin !== 'subagent') return direct
-    const lineage = await this.ctx.sessionQuery.traceSession(source.id)
-    for (const ancestor of lineage.ancestors) {
-      const workspace = workspaces.find(candidate => candidate.sessionIds.includes(ancestor.header.id))
-      if (workspace !== undefined) return workspace
-    }
-    return undefined
+/**
+ * Resolve the Workspace a new Session for `source` belongs to: the source's own
+ * membership, or for a subagent source the first accounted ancestor's. A Host
+ * routing a create or fork to a worker uses the same rule to write the
+ * membership its own Workspace projection serves.
+ * @param ctx - context exposing the Workspace registry and session query.
+ * @param source - header of the Session the new one continues.
+ * @returns the owning Workspace, or undefined when the source is ungrouped.
+ */
+export async function resolveSessionWorkspace(
+  ctx: Context,
+  source: SessionHeader,
+): Promise<Workspace | undefined> {
+  const workspaces = ctx.workspaceRegistry.list()
+  const direct = workspaces.find(workspace => workspace.sessionIds.includes(source.id))
+  if (direct !== undefined || source.origin !== 'subagent') return direct
+  const lineage = await ctx.sessionQuery.traceSession(source.id)
+  for (const ancestor of lineage.ancestors) {
+    const workspace = workspaces.find(candidate => candidate.sessionIds.includes(ancestor.header.id))
+    if (workspace !== undefined) return workspace
   }
+  return undefined
+}
+
+/**
+ * Resolve the Workspace a new Session continuing `sessionId` belongs to when
+ * only its identity is known.
+ * @param ctx - context exposing the Workspace registry and session query.
+ * @param sessionId - Session the new one continues.
+ * @returns the owning Workspace, or undefined when the source is ungrouped.
+ */
+export async function resolveSessionWorkspaceFor(
+  ctx: Context,
+  sessionId: SessionId,
+): Promise<Workspace | undefined> {
+  const lineage = await ctx.sessionQuery.traceSession(sessionId)
+  return resolveSessionWorkspace(ctx, lineage.target.header)
 }
 
 function resolvePromptFileReceipts(

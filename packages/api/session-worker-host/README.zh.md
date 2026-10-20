@@ -10,7 +10,7 @@ kind: "package-reference"
 
 <a id="summary"></a>
 
-挂载会话进程边界的 Host 侧：worker supervisor、Gateway 查询的端点路由，以及跨 worker generation 存活的实时 Session 状态。Host 保留浏览器的 follow 和 control 流，把写请求路由给所属 worker，并把 Agent、工具、MCP 和 LSP 留在该 worker 内。
+挂载会话进程边界的 Host 侧：worker supervisor、Gateway 查询的端点路由，以及跨 worker generation 存活的实时 Session 状态。Host 保留浏览器的 follow 和 control 流，把写请求路由给所属 worker，并把 Agent、工具、MCP 和 LSP 留在该 worker 内。被路由的 `session/create` 或 `session/fork` 成功后，路由在 Host 注册表中写入新 Session 的工作区归属，其 feed 正是浏览器工作区列表的来源。
 
 ## 目录
 

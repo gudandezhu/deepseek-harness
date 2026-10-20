@@ -14,12 +14,41 @@ const sessionId = 'session-router' as SessionId
 const owner = { principal: { kind: 'owner' }, signal: new AbortController().signal } as unknown as PeerScope
 const payload = (args: Record<string, unknown>) => ({ args })
 
-function setup(options: { readonly live?: boolean; readonly decision?: { kind: 'deny'; reason: string } } = {}) {
+function setup(options: {
+  readonly live?: boolean
+  readonly decision?: { kind: 'deny'; reason: string }
+  /** The worker reply for a routed call. */
+  readonly reply?: unknown
+  /** A Workspace the create request names. */
+  readonly workspace?: boolean
+  /** A Workspace member the fork source already belongs to. */
+  readonly member?: SessionId
+  readonly attachFailure?: Error
+} = {}) {
   const ctx = new Context()
   ctx.provide('remoteAccess', {
     decide: () => options.decision ?? { kind: 'allow' },
   } as never)
-  const call = vi.fn(async (..._args: unknown[]): Promise<ConnectionRpcResult<unknown>> => ({ ok: true, value: { accepted: true } }))
+  const adoptSession = vi.fn(async () => {
+    if (options.attachFailure !== undefined) throw options.attachFailure
+  })
+  const registry = {
+    get: vi.fn(() => options.workspace === true ? { id: 'workspace-1', adoptSession } : undefined),
+    list: vi.fn(() => options.member === undefined
+      ? []
+      : [{ id: 'workspace-1', sessionIds: [options.member], adoptSession }]),
+  }
+  ctx.provide('workspaceRegistry', registry as never)
+  ctx.provide('sessionQuery', {
+    traceSession: vi.fn(async (id: SessionId) => ({
+      target: { header: { id, origin: 'ordinary' } },
+      ancestors: [],
+    })),
+  } as never)
+  const call = vi.fn(async (..._args: unknown[]): Promise<ConnectionRpcResult<unknown>> => ({
+    ok: true,
+    value: options.reply ?? { accepted: true },
+  }))
   const open = vi.fn(() => (async function* () {})())
   const handle = { sessionId, pid: 1, exited: Promise.resolve(), call, open } as unknown as SessionWorkerHandle
   const get = vi.fn(() => options.live === true ? handle : undefined)
@@ -27,7 +56,10 @@ function setup(options: { readonly live?: boolean; readonly decision?: { kind: '
   const supervisor = { get, acquire: acquired } as unknown as SessionWorkerSupervisor
   const attach = vi.fn()
   const lives = { attach } as unknown as SessionWorkerLives
-  return { router: new SessionWorkerRouter(ctx, supervisor, lives, undefined), call, open, get, acquired, attach }
+  return {
+    router: new SessionWorkerRouter(ctx, supervisor, lives, undefined),
+    call, open, get, acquired, attach, adoptSession, registry,
+  }
 }
 
 describe('Session worker host router', () => {
@@ -67,6 +99,48 @@ describe('Session worker host router', () => {
     expect((forwarded[1]['request'] as Record<string, unknown>)['cwd']).toBe('/repo')
     expect(String((forwarded[1]['request'] as Record<string, unknown>)['sessionId'])).toMatch(/^session-/)
     expect(attach).toHaveBeenCalledWith((forwarded[1]['request'] as Record<string, unknown>)['sessionId'], expect.anything())
+  })
+
+  it('writes the created Session into its Workspace in this process', async () => {
+    const { router, adoptSession, registry } = setup({
+      workspace: true,
+      reply: { sessionId: 'session-created' },
+    })
+    await router.dispatch?.(
+      'session/create',
+      payload({ request: { cwd: '/repo', workspaceId: 'workspace-1' } }),
+      new AbortController().signal,
+      owner,
+    )
+    expect(registry.get).toHaveBeenCalledWith('workspace-1')
+    expect(adoptSession).toHaveBeenCalledWith('session-created')
+  })
+
+  it('writes a forked Session into the source Workspace in this process', async () => {
+    const { router, adoptSession } = setup({
+      member: sessionId,
+      reply: { sessionId: 'session-child' },
+    })
+    await router.dispatch?.('session/fork', payload({ request: { sessionId } }), new AbortController().signal, owner)
+    expect(adoptSession).toHaveBeenCalledWith('session-child')
+  })
+
+  it('reports a Host-side membership write that failed after the worker created the Session', async () => {
+    const { router } = setup({
+      workspace: true,
+      reply: { sessionId: 'session-created' },
+      attachFailure: new Error('read-only workspace'),
+    })
+    const result = await router.dispatch?.(
+      'session/create',
+      payload({ request: { cwd: '/repo', workspaceId: 'workspace-1' } }),
+      new AbortController().signal,
+      owner,
+    )
+    expect(result).toMatchObject({
+      ok: false,
+      error: { code: 'session/workspace-attach-failed', details: { sessionId: 'session-created' } },
+    })
   })
 
   it('denies a non-owner before spawning or forwarding', async () => {

@@ -30,8 +30,14 @@
     - id: workspace
       name: '@deepseek-ai/dsh-workspace'
 
+    # Membership writes belong to the Host: this process serves no Workspace
+    # projection, so its own write would leave the browser's Workspace list
+    # without the Session until a reload. The Host router attaches after the
+    # routed create or fork succeeds.
     - id: session-controller
       name: '@deepseek-ai/dsh-api-session-controller'
+      config:
+        attachWorkspaceSessions: false
 
     - id: job-controller
       name: '@deepseek-ai/dsh-api-job-controller'

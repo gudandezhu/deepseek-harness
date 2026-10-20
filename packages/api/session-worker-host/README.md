@@ -8,7 +8,7 @@ English | [中文](README.zh.md)
 
 ## Summary
 
-Mounts the Host side of the per-session process boundary: a worker supervisor, the endpoint router the Gateway consults, and live Session state that survives worker generations. The Host keeps browser follow and control streams, routes writes to the owning worker, and leaves Agent, tools, MCP, and LSP in that worker.
+Mounts the Host side of the per-session process boundary: a worker supervisor, the endpoint router the Gateway consults, and live Session state that survives worker generations. The Host keeps browser follow and control streams, routes writes to the owning worker, and leaves Agent, tools, MCP, and LSP in that worker. After a routed `session/create` or `session/fork` succeeds, the router writes the new Session's Workspace membership in the Host registry, whose feed serves the browser's Workspace list.
 
 ## Table of Contents
 

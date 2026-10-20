@@ -15,11 +15,13 @@ import type { Context } from '@deepseek-ai/cordis'
 import type { RemoteAccessAction } from '@deepseek-ai/dsh-api-remote-access'
 import type { ConnectionRpcResult } from '@deepseek-ai/dsh-client-connection'
 import type { SessionId } from '@deepseek-ai/dsh-session'
+import { WorkspaceId, type Workspace, type WorkspaceRegistry } from '@deepseek-ai/dsh-workspace'
 import type { PeerScope } from '@deepseek-ai/dsh-typert-protocol'
-import type {
-  SessionDeliverValue,
-  SessionReminderDelivery,
-  SessionWorkerLives,
+import {
+  resolveSessionWorkspaceFor,
+  type SessionDeliverValue,
+  type SessionReminderDelivery,
+  type SessionWorkerLives,
 } from '@deepseek-ai/dsh-api-session-controller'
 import type { SessionWorkerHandle, SessionWorkerSupervisor } from '@deepseek-ai/dsh-session-worker-supervisor'
 import type { TypertEndpointRouter } from '@deepseek-ai/dsh-api-gateway'
@@ -217,6 +219,43 @@ export class SessionWorkerRouter implements TypertEndpointRouter, SessionReminde
     if (route.attachAfter !== true) this.attach(target.sessionId, worker)
     const result = await worker.call(endpoint, target.args, { signal })
     if (route.attachAfter === true && result.ok) this.attach(target.sessionId, worker)
+    return this.attachWorkspace(endpoint, target, result)
+  }
+
+  /**
+   * Write the new Session's Workspace membership in this process. The worker
+   * created the Session but owns no Workspace projection; only the Host's
+   * registry publishes membership to browsers.
+   * @param endpoint - routed endpoint that may create a Session.
+   * @param target - addressed Session and the forwarded arguments.
+   * @param result - worker result to return unchanged when no attach applies.
+   * @returns the worker result, or an attach failure naming the Session.
+   */
+  private async attachWorkspace(
+    endpoint: string,
+    target: RouteTarget,
+    result: ConnectionRpcResult<unknown>,
+  ): Promise<ConnectionRpcResult<unknown>> {
+    if (!result.ok) return result
+    if (endpoint !== 'session/create' && endpoint !== 'session/fork') return result
+    const registry = this.ctx.get('workspaceRegistry')
+    if (registry === undefined) return result
+    const created = createdSessionId(result.value)
+    if (created === undefined) return result
+    let workspace: Workspace | undefined
+    try {
+      workspace = endpoint === 'session/create'
+        ? requestedWorkspace(registry, target.args)
+        : await resolveSessionWorkspaceFor(this.ctx, target.sessionId)
+    } catch (error) {
+      return workspaceAttachFailure(created, undefined, error)
+    }
+    if (workspace === undefined) return result
+    try {
+      await workspace.adoptSession(created)
+    } catch (error) {
+      return workspaceAttachFailure(created, workspace.id, error)
+    }
     return result
   }
 
@@ -315,6 +354,46 @@ function argsOf(payload: unknown): Readonly<Record<string, unknown>> | undefined
 function readId(args: Readonly<Record<string, unknown>>, field: string): SessionId | undefined {
   const value = args[field]
   return typeof value === 'string' && value.length > 0 ? value as SessionId : undefined
+}
+
+/** The Workspace a create request named, or undefined for a cwd-only create. */
+function requestedWorkspace(registry: WorkspaceRegistry, args: Readonly<Record<string, unknown>>) {
+  const request = requestOf(args)
+  const workspaceId = request === undefined ? undefined : readWorkspaceId(request, 'workspaceId')
+  return workspaceId === undefined ? undefined : registry.get(workspaceId)
+}
+
+function readWorkspaceId(
+  args: Readonly<Record<string, unknown>>,
+  field: string,
+): WorkspaceId | undefined {
+  const value = args[field]
+  return typeof value === 'string' && value.length > 0 ? WorkspaceId(value) : undefined
+}
+
+/** The Session identity a create or fork result reports. */
+function createdSessionId(value: unknown): SessionId | undefined {
+  const result = typeof value === 'object' && value !== null && !Array.isArray(value)
+    ? value as Record<string, unknown>
+    : undefined
+  return result === undefined ? undefined : readId(result, 'sessionId')
+}
+
+/** Report that the Session exists but its Host-side Workspace membership does not. */
+function workspaceAttachFailure(
+  sessionId: SessionId,
+  workspaceId: WorkspaceId | undefined,
+  error: unknown,
+): ConnectionRpcResult<never> {
+  return {
+    ok: false,
+    error: {
+      code: 'session/workspace-attach-failed',
+      message: `session "${sessionId}" was created but could not attach to `
+        + `${workspaceId === undefined ? 'its workspace' : `workspace "${workspaceId}"`}: ${String(error)}`,
+      details: { sessionId, ...(workspaceId === undefined ? {} : { workspaceId }) },
+    },
+  }
 }
 
 function workerFailure(code: string, message: string): ConnectionRpcResult<never> {

@@ -71,6 +71,7 @@ import type {
 } from './types.ts'
 
 export type * from './types.ts'
+export { resolveSessionWorkspace, resolveSessionWorkspaceFor } from './commands.ts'
 export { ApiSessionNotFound } from './agent.ts'
 export { SessionFileReferences } from './file-references.ts'
 export { SessionSkillCatalog } from './skill-catalog.ts'
@@ -112,12 +113,22 @@ function addressedSession(request: { readonly address: SessionAddress }): Sessio
 export interface Config {
   /** Override platform desktop-opener detection. */
   readonly nativeOpen?: boolean
+  /**
+   * Whether this process writes Workspace membership for the Sessions it
+   * creates or forks. A session worker sets `false`: the Host owns every
+   * Workspace write, and a worker-side write would never reach the Host's
+   * Workspace projection.
+   */
+  readonly attachWorkspaceSessions?: boolean
   /** Positive integral milliseconds of list work before yielding between complete rows. */
   readonly listWorkSliceMs?: number
 }
 
 /** Deployment policy after schema defaults have been applied. */
-type ResolvedConfig = Config & { readonly listWorkSliceMs: number }
+type ResolvedConfig = Config & {
+  readonly attachWorkspaceSessions: boolean
+  readonly listWorkSliceMs: number
+}
 
 /** Host integrations replaceable by direct unit tests. */
 export interface SessionControllerInternals {
@@ -152,6 +163,7 @@ export class SessionController extends TypertRemoteService {
 
   static Config: z<Config, ResolvedConfig> = z.object({
     nativeOpen: z.boolean(),
+    attachWorkspaceSessions: z.boolean().default(true),
     listWorkSliceMs: z.natural().min(1).default(16),
   })
 
@@ -178,7 +190,12 @@ export class SessionController extends TypertRemoteService {
     const resolved = SessionController.Config(config)
     installModelSelectionProjection(ctx)
     this.agents = new ApiSessionAgentController(ctx)
-    this.commands = new SessionCommandController(ctx, this.agents, process.cwd())
+    this.commands = new SessionCommandController(
+      ctx,
+      this.agents,
+      process.cwd(),
+      resolved.attachWorkspaceSessions,
+    )
     this.controlState = new SessionControlController(ctx)
     // Registered before history so reverse-order teardown closes every
     // follower before waiting for already-admitted promotions.

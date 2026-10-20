@@ -182,7 +182,7 @@ export interface Config {
 ## `@deepseek-ai/dsh-api-gateway`
 
 - `inject`: `typert` · `remoteAccess`
-- `source`: [`packages/api/gateway/src/index.ts:156`](../packages/api/gateway/src/index.ts)
+- `source`: [`packages/api/gateway/src/index.ts:158`](../packages/api/gateway/src/index.ts)
 
 ```ts config-catalog
 /** Gateway transport configuration. */
@@ -220,13 +220,20 @@ export interface Config {
 ## `@deepseek-ai/dsh-api-session-controller`
 
 - `inject`: `agentDefaultModel` · `agents` · `attachments` · `fileUploads` · `fs` · `llm` · `remoteAccess` · `sessions` · `sessionProjections` · `sessionQuery` · `typert` · `workspaceRegistry`
-- `source`: [`packages/api/session-controller/src/index.ts:94`](../packages/api/session-controller/src/index.ts)
+- `source`: [`packages/api/session-controller/src/index.ts:113`](../packages/api/session-controller/src/index.ts)
 
 ```ts config-catalog
 /** Session Controller deployment policy. */
 export interface Config {
   /** Override platform desktop-opener detection. */
   readonly nativeOpen?: boolean
+  /**
+   * Whether this process writes Workspace membership for the Sessions it
+   * creates or forks. A session worker sets `false`: the Host owns every
+   * Workspace write, and a worker-side write would never reach the Host's
+   * Workspace projection.
+   */
+  readonly attachWorkspaceSessions?: boolean
   /** Positive integral milliseconds of list work before yielding between complete rows. */
   readonly listWorkSliceMs?: number
 }
@@ -473,6 +480,26 @@ export interface ConnectionRecoveryConfig {
 }
 ```
 <!-- END GENERATED config-catalog:@deepseek-ai/dsh-client-connection -->
+
+<!-- BEGIN GENERATED config-catalog:@deepseek-ai/dsh-client-file-upload -->
+<a id="deepseek-aidsh-client-file-upload"></a>
+
+## `@deepseek-ai/dsh-client-file-upload`
+
+- `inject`: `agents` · `attachments` · `commands` · `connection`
+- `source`: [`packages/client/file-upload/src/index.ts:27`](../packages/client/file-upload/src/index.ts)
+
+```ts config-catalog
+/** File-upload deployment policy. */
+export interface Config {
+  /**
+   * Directory holding one private receipt document per Session. Defaults to
+   * `$DSH_HOME/cache/file-upload-receipts`; tests point it at a temporary root.
+   */
+  readonly receiptRoot?: string
+}
+```
+<!-- END GENERATED config-catalog:@deepseek-ai/dsh-client-file-upload -->
 
 <!-- BEGIN GENERATED config-catalog:@deepseek-ai/dsh-client-hmr -->
 <a id="deepseek-aidsh-client-hmr"></a>
@@ -3044,6 +3071,69 @@ export interface Config extends SessionTitleLlmConfig {
 ```
 <!-- END GENERATED config-catalog:@deepseek-ai/dsh-session-title-first-prompt-llm -->
 
+<!-- BEGIN GENERATED config-catalog:@deepseek-ai/dsh-session-worker-bridge -->
+<a id="deepseek-aidsh-session-worker-bridge"></a>
+
+## `@deepseek-ai/dsh-session-worker-bridge`
+
+- `inject`: `agents` · `connection` · `sessionController` · `sessions` · `typertGateway`
+- `source`: [`packages/api/session-worker-bridge/src/index.ts:49`](../packages/api/session-worker-bridge/src/index.ts)
+
+```ts config-catalog
+/** Bridge deployment configuration. */
+export interface Config {
+  /** Milliseconds the Session log must stay unchanged. */
+  readonly idleQuietMs?: number
+  /** Milliseconds between idle observations. */
+  readonly idlePollMs?: number
+  /** Maximum buffered client uplink items per logical stream. */
+  readonly maxUplinkItems?: number
+  /** Maximum UTF-8 size of one control frame. */
+  readonly maxFrameBytes?: number
+}
+```
+<!-- END GENERATED config-catalog:@deepseek-ai/dsh-session-worker-bridge -->
+
+<!-- BEGIN GENERATED config-catalog:@deepseek-ai/dsh-session-worker-host -->
+<a id="deepseek-aidsh-session-worker-host"></a>
+
+## `@deepseek-ai/dsh-session-worker-host`
+
+- `source`: [`packages/api/session-worker-host/src/index.ts:61`](../packages/api/session-worker-host/src/index.ts)
+
+```ts config-catalog
+/** Host plugin configuration. */
+export interface Config {
+  /** Executable and fixed arguments that boot a worker, e.g. `['dsh']`. */
+  readonly command?: string[]
+  /** Shipped profile that mounts the worker composition. */
+  readonly profile?: string
+  /** Extra worker arguments; defaults to the Host's `--patch` overlays. */
+  readonly args?: string[]
+  /** Explicit child environment entries merged after the forwarded environment. */
+  readonly env?: Readonly<Record<string, string>>
+  /** Exact names or `prefix*` patterns the worker inherits from the Host environment. */
+  readonly forwardEnv?: string[]
+  /** Milliseconds an idle worker may live; `0` disables automatic shutdown. */
+  readonly idleTimeoutMs?: number
+  /** Milliseconds allowed for spawn, ready, and initialize. */
+  readonly readyTimeoutMs?: number
+  /** Milliseconds allowed for shutdown acknowledgement and exit. */
+  readonly shutdownTimeoutMs?: number
+  /** Milliseconds the subprocess provider may spend terminating a range. */
+  readonly graceMs?: number
+  /** Retained live events per Session. */
+  readonly liveEventLimit?: number
+  /** Retained projection values per Session. */
+  readonly projectionLimit?: number
+  /** Milliseconds a Session with no worker stays cached; `0` keeps it. */
+  readonly coldSessionTtlMs?: number
+  /** Cold Sessions retained before the least recently touched is evicted. */
+  readonly maxColdSessions?: number
+}
+```
+<!-- END GENERATED config-catalog:@deepseek-ai/dsh-session-worker-host -->
+
 <!-- BEGIN GENERATED config-catalog:@deepseek-ai/dsh-shell-env -->
 <a id="deepseek-aidsh-shell-env"></a>
 
@@ -4597,7 +4687,6 @@ These load from a `cordis.yml` entry with no `config:` block; they declare no co
 | `@deepseek-ai/dsh-api-remotes` | `typertGateway` | [`packages/api/remotes/src/index.ts`](../packages/api/remotes/src/index.ts) |
 | `@deepseek-ai/dsh-authorization` | `credentials` | [`packages/credentials/authorization/src/index.ts`](../packages/credentials/authorization/src/index.ts) |
 | `@deepseek-ai/dsh-browser-use` | — | [`packages/browser-use/browser-use/src/index.ts`](../packages/browser-use/browser-use/src/index.ts) |
-| `@deepseek-ai/dsh-client-file-upload` | `agents` · `attachments` · `commands` · `connection` | [`packages/client/file-upload/src/index.ts`](../packages/client/file-upload/src/index.ts) |
 | `@deepseek-ai/dsh-client-locale` | — | [`packages/client/locale/src/index.ts`](../packages/client/locale/src/index.ts) |
 | `@deepseek-ai/dsh-client-modules` | `loader` | [`packages/client/modules/src/index.ts`](../packages/client/modules/src/index.ts) |
 | `@deepseek-ai/dsh-client-resources` | — | [`packages/client/resources/src/index.ts`](../packages/client/resources/src/index.ts) |
@@ -4787,6 +4876,9 @@ Imported as libraries by other packages; a `cordis.yml` cannot load them.
 | `@deepseek-ai/dsh-session-snapshot` | — | [`packages/test-support/session-snapshot/src/index.ts`](../packages/test-support/session-snapshot/src/index.ts) |
 | `@deepseek-ai/dsh-session-telemetry` | — | [`packages/session/session-telemetry/src/index.ts`](../packages/session/session-telemetry/src/index.ts) |
 | `@deepseek-ai/dsh-session-title-llm` | — | [`packages/session/session-title-llm/src/index.ts`](../packages/session/session-title-llm/src/index.ts) |
+| `@deepseek-ai/dsh-session-worker` | — | [`packages/bundle/session-worker/src/index.ts`](../packages/bundle/session-worker/src/index.ts) |
+| `@deepseek-ai/dsh-session-worker-protocol` | — | [`packages/api/session-worker-protocol/src/index.ts`](../packages/api/session-worker-protocol/src/index.ts) |
+| `@deepseek-ai/dsh-session-worker-supervisor` | — | [`packages/api/session-worker-supervisor/src/index.ts`](../packages/api/session-worker-supervisor/src/index.ts) |
 | `@deepseek-ai/dsh-ssh-helper-runtime` | — | [`packages/ssh/ssh-helper-runtime/src/index.ts`](../packages/ssh/ssh-helper-runtime/src/index.ts) |
 | `@deepseek-ai/dsh-timeout` | — | [`packages/util/timeout/src/index.ts`](../packages/util/timeout/src/index.ts) |
 | `@deepseek-ai/dsh-typert-generator` | — | [`packages/typert/generator/src/index.ts`](../packages/typert/generator/src/index.ts) |

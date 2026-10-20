@@ -762,6 +762,17 @@ describe('Workspace session ordering', () => {
     expect(workspace.sessionIds).toEqual(['s1'])
   })
 
+  it('adopts a Session whose header has not been written yet', async () => {
+    const dir = await makeDir('adopted')
+    const result = await harness()
+    onTestFinished(() => result.ctx.fiber.dispose())
+    const workspace = await result.registry.create(dir)
+    const adopted = SessionId('unmaterialized')
+    await workspace.adoptSession(adopted)
+    expect(workspace.sessionIds).toEqual([adopted])
+    expect(storedRecord(result.pool, workspace.id).sessionIds).toEqual([adopted])
+  })
+
 })
 
 describe('header-validated membership projection', () => {
