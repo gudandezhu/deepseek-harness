@@ -8,6 +8,7 @@ import { LlmAttemptId, ToolCallId, createMessage, createToolResultMessage, creat
 import type { MessageSource } from '@deepseek-ai/dsh-llm'
 import type { Session, SessionEvent, SessionId } from '@deepseek-ai/dsh-session'
 import { SessionHistoryController } from '@deepseek-ai/dsh-api-session-controller/src/history.ts'
+import type { SessionLiveListeners, SessionLiveView } from '@deepseek-ai/dsh-api-session-controller/src/session-worker/live-state.ts'
 import type { SessionFollowFrame, SessionPage, SessionWireEvent } from '@deepseek-ai/dsh-api-session-controller/types'
 import { createSessionTestRemote, installSessionReadTestServices } from './test-remote.ts'
 
@@ -17,6 +18,11 @@ type CheckpointSource = Extract<MessageSource, { readonly kind: 'compact-checkpo
 function checkpointSource(compactionId: string): CheckpointSource {
   return { kind: 'compact-checkpoint', compactionId: compactionId as CheckpointSource['compactionId'] }
 }
+/** Build one durable-shaped event for a fake live window. */
+function liveEvent(seq: number): SessionEvent {
+  return { type: 'user/message', seq, time: seq, data: {} } as unknown as SessionEvent
+}
+
 /** Append a production-shaped human prompt to the session surface. */
 function appendUserText(session: Session, text: string): SessionEvent {
   return session.append('user/message', createUserMessage({
@@ -102,6 +108,58 @@ function pageEvents(page: SessionPage): SessionWireEvent[] {
 }
 
 describe('Session history raw journal', () => {
+  it('keeps following a cold Session and resets when a worker attaches', async () => {
+    const { ctx } = await harness()
+    const session = ctx.sessions.create(undefined, { meta: { cwd: '/workspace' } })
+    const history = new SessionHistoryController(ctx, (observation) => { observation[Symbol.dispose]() })
+    const live: { view?: SessionLiveView } = {}
+    const listeners = new Set<SessionLiveListeners>()
+    ctx.provide('sessionWorkerLives', {
+      has: () => false,
+      workerAvailable: () => live.view !== undefined,
+      view: () => live.view,
+      observe: (listener: SessionLiveListeners) => {
+        listeners.add(listener)
+        return () => { listeners.delete(listener) }
+      },
+    } as never)
+    const abort = new AbortController()
+    const iterator = history.follow({
+      address: { kind: 'session', sessionId: session.id },
+    }, abort.signal)[Symbol.asyncIterator]()
+    // A Session that never had a worker still opens with durable history.
+    await expect(iterator.next()).resolves.toMatchObject({ value: { type: 'snapshot' } })
+
+    live.view = {
+      sessionId: session.id,
+      header: session.header,
+      cursor: 5,
+      events: [liveEvent(5)],
+      baseSeq: 5,
+      hasMore: false,
+      projections: { asOfSeq: 5, values: {} },
+      assistantStream: { revision: 0 },
+      generation: 1,
+      running: false,
+      agentAvailable: true,
+    } as unknown as SessionLiveView
+    for (const listener of listeners) listener.generation(session.id)
+    await expect(iterator.next()).resolves.toMatchObject({ value: { type: 'reset', cursor: 5 } })
+
+    for (const listener of listeners) listener.event(session.id, liveEvent(6))
+    await expect(iterator.next()).resolves.toMatchObject({
+      value: { type: 'event', event: { seq: 6 } },
+    })
+
+    // A crashed worker reinstalls the retained window instead of going silent.
+    for (const listener of listeners) listener.lost?.(session.id)
+    await expect(iterator.next()).resolves.toMatchObject({ value: { type: 'reset', cursor: 5 } })
+
+    abort.abort()
+    await iterator.next()
+    await ctx.fiber.dispose()
+  })
+
   it('opens an empty opted-in Assistant baseline before any live attempt exists', async () => {
     const { ctx } = await harness()
     const session = ctx.sessions.create(undefined, { meta: { cwd: '/workspace' } })

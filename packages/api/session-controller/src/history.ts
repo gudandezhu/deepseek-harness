@@ -121,7 +121,10 @@ export class SessionHistoryController {
   async *follow(request: SessionFollowRequest, signal: AbortSignal): AsyncIterable<SessionFollowFrame> {
     validateHistoryWindow(request)
     const lives = this.ctx.get('sessionWorkerLives')
-    if (lives !== undefined && request.address.kind === 'session' && lives.has(request.address.sessionId)) {
+    // A worker-capable deployment always follows through live state, even for
+    // a Session whose cache entry was evicted or never created: opening a cold
+    // Session must still pick up the worker the first prompt spawns.
+    if (lives !== undefined && request.address.kind === 'session') {
       yield* this.followLive(request, signal)
       return
     }
@@ -193,14 +196,23 @@ export class SessionHistoryController {
         }
       }
       while (view === undefined && !signal.aborted) {
-        await waker.wait()
-        buffered.popFront()
+        // A generation observed while the generator was suspended at a `yield`
+        // already sits in the buffer; its notification cannot wake a waiter
+        // that did not exist yet.
+        if (buffered.popFront() === undefined) await waker.wait()
         view = lives.view(target)
       }
       if (delivered === undefined) {
         if (view === undefined) return
         signal.throwIfAborted()
         yield snapshotFrame(view, request)
+        delivered = view.cursor
+      } else if (view !== undefined) {
+        // The cold opening was already delivered; the generation event that
+        // made the view available is consumed by the wait loop, so install the
+        // window here as a reset.
+        signal.throwIfAborted()
+        yield snapshotFrame(view, request, 'reset')
         delivered = view.cursor
       }
       while (!signal.aborted) {
