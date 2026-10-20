@@ -161,7 +161,9 @@ export class ApiSessionList {
     }
     signal?.throwIfAborted()
     items.sort((left, right) => right.updatedAt - left.updatedAt)
-    return items
+    // Sessions whose Agent runs in a worker may not have reached persistence
+    // yet and carry availability and running state the Host cannot observe.
+    return this.ctx.get('sessionWorkerLives')?.overlay(items) ?? items
   }
 
   private summarizeCold({ header, formatStatus }: SessionRecord): SessionSummary {

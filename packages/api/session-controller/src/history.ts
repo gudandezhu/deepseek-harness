@@ -33,6 +33,7 @@ import type {
   SessionWireHeader,
   SessionWireEvent,
 } from './types.ts'
+import type { SessionLiveView } from './session-worker/live-state.ts'
 import { SessionAssistantStreamAccumulator } from './assistant-stream.ts'
 
 const DEFAULT_MAX_MESSAGES = 50
@@ -119,6 +120,113 @@ export class SessionHistoryController {
    */
   async *follow(request: SessionFollowRequest, signal: AbortSignal): AsyncIterable<SessionFollowFrame> {
     validateHistoryWindow(request)
+    const lives = this.ctx.get('sessionWorkerLives')
+    if (lives !== undefined && request.address.kind === 'session' && lives.view(request.address.sessionId) !== undefined) {
+      yield* this.followLive(request, signal)
+      return
+    }
+    yield* this.followCold(request, signal)
+  }
+
+  /**
+   * Serve one Session whose Agent runs in a worker, without activating a Host
+   * Agent. The worker's passive follow fills the host cache; this generator
+   * keeps the browser stream alive across worker generations.
+   */
+  private async *followLive(
+    request: SessionFollowRequest,
+    signal: AbortSignal,
+  ): AsyncIterable<SessionFollowFrame> {
+    const lives = this.ctx.get('sessionWorkerLives')
+    if (lives === undefined) throw new RemoteError('gateway/internal', 'session worker live state is unavailable', {})
+    const { address } = request
+    const target = addressId(address)
+    type LiveItem =
+      | { readonly type: 'event'; readonly event: SessionEvent }
+      | { readonly type: 'assistant-stream'; readonly frame: SessionAssistantStreamFrame }
+      | { readonly type: 'generation' }
+    const buffered = new Deque<LiveItem>()
+    const waker = createWaker()
+    let closed = false
+    const dispose = lives.observe({
+      event: (sessionId, event) => {
+        if (sessionId !== target) return
+        buffered.pushBack({ type: 'event', event })
+        waker.notify()
+      },
+      assistant: (sessionId, frame) => {
+        if (sessionId !== target || request.assistantStream !== true) return
+        buffered.pushBack({ type: 'assistant-stream', frame })
+        waker.notify()
+      },
+      projection: () => {},
+      generation: (sessionId) => {
+        if (sessionId !== target) return
+        buffered.pushBack({ type: 'generation' })
+        waker.notify()
+      },
+    })
+    const onAbort = (): void => {
+      closed = true
+      waker.notify()
+    }
+    signal.addEventListener('abort', onAbort, { once: true })
+    try {
+      let view = lives.view(target)
+      while (view === undefined && !signal.aborted) {
+        await waker.wait()
+        buffered.popFront()
+        view = lives.view(target)
+      }
+      if (view === undefined) return
+      signal.throwIfAborted()
+      yield snapshotFrame(view, request)
+      let delivered = view.cursor
+      while (!closed && !signal.aborted) {
+        const item = buffered.popFront()
+        if (item === undefined) {
+          await waker.wait()
+          continue
+        }
+        switch (item.type) {
+          case 'assistant-stream':
+            yield { type: 'assistant-stream', frame: item.frame }
+            continue
+          case 'generation': {
+            // A fresh worker publishes a new opening window. Replace the
+            // browser window even when the durable cursor did not move, since
+            // the Assistant baseline belongs to the new process.
+            const next = lives.view(target)
+            if (next === undefined) continue
+            yield snapshotFrame(next, request, 'reset')
+            delivered = next.cursor
+            continue
+          }
+          case 'event': {
+            if (item.event.seq <= delivered) continue
+            if (item.event.seq !== delivered + 1) {
+              // The retained window no longer covers the follower; replace it
+              // instead of emitting a partial stream.
+              const next = lives.view(target)
+              if (next !== undefined) {
+                yield snapshotFrame(next, request, 'reset')
+                delivered = next.cursor
+              }
+              continue
+            }
+            delivered = item.event.seq
+            yield entryFor(item.event)
+          }
+        }
+      }
+    } finally {
+      closed = true
+      dispose()
+      signal.removeEventListener('abort', onAbort)
+    }
+  }
+
+  private async *followCold(request: SessionFollowRequest, signal: AbortSignal): AsyncIterable<SessionFollowFrame> {
     const { address } = request
     const target = addressId(address)
     const buffered = new Deque<
@@ -131,22 +239,17 @@ export class SessionHistoryController {
     >()
     let snapshotCursor: SessionSeqCursor | undefined
     let assistantStreamOrdinal = 0
-    let wake: (() => void) | undefined
-    const notify = (): void => {
-      const resume = wake
-      wake = undefined
-      resume?.()
-    }
+    const waker = createWaker()
     const follower = { closed: false }
     const close = (): void => {
       follower.closed = true
-      notify()
+      waker.notify()
     }
     this.closeFollowers.add(close)
     const disposeEvent = this.ctx.on('session/event', (session, event) => {
       if (session.id !== target) return
       buffered.pushBack({ type: 'event', event })
-      notify()
+      waker.notify()
     }, { global: true })
     const disposeCreated = this.ctx.on('session/created', (session) => {
       if (session.id !== target) return
@@ -160,7 +263,7 @@ export class SessionHistoryController {
       for (let index = suffix.length - 1; index >= 0; index -= 1) {
         buffered.pushFront({ type: 'event', event: suffix[index] as SessionEvent })
       }
-      notify()
+      waker.notify()
     }, { global: true })
     const disposeAssistantStream = request.assistantStream !== true
       ? undefined
@@ -171,9 +274,9 @@ export class SessionHistoryController {
           frame: wireAssistantStreamFrame(frame, cursorBeforeNext(agent.session.seq)),
           ordinal: ++assistantStreamOrdinal,
         })
-        notify()
+        waker.notify()
       }, { global: true })
-    const onAbort = (): void => { notify() }
+    const onAbort = (): void => { waker.notify() }
     signal.addEventListener('abort', onAbort, { once: true })
     try {
       using source = await this.sourceFor(address, signal, true)
@@ -201,7 +304,10 @@ export class SessionHistoryController {
           : projectionBlock(source.projections),
         ...assistantStream === undefined ? {} : { assistantStream },
       }
-      if (address.kind === 'session' && source.source === 'prepared') {
+      // A host that keeps live state owns Agent placement: opening a Session
+      // must not activate an Agent in this process.
+      if (address.kind === 'session' && source.source === 'prepared'
+        && this.ctx.get('sessionWorkerLives') === undefined) {
         const promotion = source.retain()
         try {
           this.promote(promotion)
@@ -214,7 +320,7 @@ export class SessionHistoryController {
       while (!follower.closed && !signal.aborted) {
         const item = buffered.popFront()
         if (item === undefined) {
-          await new Promise<void>((resolve) => { wake = resolve })
+          await waker.wait()
           continue
         }
         if (item.type === 'assistant-stream') {
@@ -274,6 +380,26 @@ export class SessionHistoryController {
     }
   }
 
+}
+
+/** Single-waiter wake-up pair shared by the cold and live follow loops. */
+interface Waker {
+  /** Resume the waiting loop; idempotent when nothing waits. */
+  readonly notify: () => void
+  /** Wait until the next notification. */
+  readonly wait: () => Promise<void>
+}
+
+function createWaker(): Waker {
+  let wake: (() => void) | undefined
+  return {
+    notify: () => {
+      const resume = wake
+      wake = undefined
+      resume?.()
+    },
+    wait: () => new Promise<void>((resolve) => { wake = resolve }),
+  }
 }
 
 function cursorBeforeNext(nextSeq: SessionLogOffsetType): SessionSeqCursor {
@@ -389,23 +515,32 @@ function rejectNotFound(address: SessionAddress): never {
   })
 }
 
+/**
+ * Cut one message-aligned window ending at `throughSeq`.
+ *
+ * `events` may start at a non-zero sequence, as a worker opening snapshot
+ * does; `windowStart` is that first sequence and `windowHasMore` reports
+ * older durable history outside the supplied array.
+ */
 function paginate(
   events: readonly SessionEvent[],
   beforeSeq: SessionLogOffsetType | undefined,
   maxMessages: number,
   throughSeq: SessionSeqCursor,
   turnWindow?: SessionPageRequest['turnWindow'],
+  windowStart = 0,
+  windowHasMore = false,
 ): { readonly events: SessionEvent[]; readonly hasMore: boolean } {
-  const end = SessionLogOffset(Math.min(throughSeq + 1, beforeSeq ?? throughSeq + 1))
+  const end = Math.min(throughSeq + 1, beforeSeq ?? throughSeq + 1)
   let count = 0
   let turns = 0
-  let cut = SessionLogOffset(0)
-  for (let index = end - 1; index >= 0; index--) {
-    const event = events[index] as SessionEvent
+  let cut = windowStart
+  for (let seq = end - 1; seq >= windowStart; seq--) {
+    const event = events[seq - windowStart] as SessionEvent
     if (turnWindow !== undefined && event.type === 'turn/start') {
       turns++
       if (count >= turnWindow.minMessages && turns >= turnWindow.minTurns) {
-        cut = SessionLogOffset(index)
+        cut = seq
         break
       }
     }
@@ -419,11 +554,43 @@ function paginate(
       }
     }
     if (count >= maxMessages) {
-      cut = SessionLogOffset(groupStart)
+      cut = Math.max(groupStart, windowStart)
       break
     }
   }
-  return { events: events.slice(cut, end), hasMore: cut > 0 }
+  return { events: events.slice(cut - windowStart, end - windowStart), hasMore: cut > windowStart || windowHasMore }
+}
+
+/**
+ * Build the opening or replacement window for one live Session.
+ * @param view - contiguous live window.
+ * @param request - page budget from the follow request.
+ * @param type - opening snapshot or a full replacement.
+ * @returns the wire frame.
+ */
+function snapshotFrame(
+  view: SessionLiveView,
+  request: SessionFollowRequest,
+  type: 'snapshot' | 'reset' = 'snapshot',
+): Extract<SessionFollowFrame, { readonly type: 'snapshot' | 'reset' }> {
+  const page = paginate(
+    view.events,
+    undefined,
+    request.maxMessages ?? DEFAULT_MAX_MESSAGES,
+    view.cursor,
+    request.turnWindow,
+    view.baseSeq,
+    view.hasMore,
+  )
+  return {
+    type,
+    header: wireHeader(view.header),
+    cursor: view.cursor,
+    records: pageRecords(page.events),
+    hasMore: page.hasMore,
+    projections: view.projections,
+    ...request.assistantStream === true ? { assistantStream: view.assistantStream } : {},
+  }
 }
 
 /** Translate current logical Session metadata to the browser wire. */

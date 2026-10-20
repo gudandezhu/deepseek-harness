@@ -484,6 +484,7 @@
       "@deepseek-ai/dsh-session-title-llm": ["./packages/session/session-title-llm/src"],
       "@deepseek-ai/dsh-session-turn-outline": ["./packages/session/session-turn-outline/src"],
       "@deepseek-ai/dsh-session-worker-bridge": ["./packages/api/session-worker-bridge/src"],
+      "@deepseek-ai/dsh-session-worker-host": ["./packages/api/session-worker-host/src"],
       "@deepseek-ai/dsh-session-worker-protocol": ["./packages/api/session-worker-protocol/src"],
       "@deepseek-ai/dsh-session-worker-supervisor": ["./packages/api/session-worker-supervisor/src"],
       "@deepseek-ai/dsh-settings": ["./packages/settings/settings/src"],

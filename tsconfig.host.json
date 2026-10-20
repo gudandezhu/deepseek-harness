@@ -334,6 +334,7 @@
     { "path": "./packages/api/session-worker-protocol/tsconfig.host.json" },
     { "path": "./packages/api/session-worker-bridge/tsconfig.host.json" },
     { "path": "./packages/api/session-worker-supervisor/tsconfig.host.json" },
+    { "path": "./packages/api/session-worker-host/tsconfig.host.json" },
     { "path": "./packages/typert/loader" },
     { "path": "./packages/session/session-persistence" },
     { "path": "./packages/session/session-format" },

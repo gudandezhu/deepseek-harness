@@ -72,6 +72,18 @@ export type * from './types.ts'
 export { ApiSessionNotFound } from './agent.ts'
 export { SessionFileReferences } from './file-references.ts'
 export { SessionSkillCatalog } from './skill-catalog.ts'
+export {
+  DEFAULT_LIVE_EVENT_LIMIT,
+  DEFAULT_LIVE_WINDOW_MESSAGES,
+  SessionWorkerLives,
+} from './session-worker/live-state.ts'
+export type {
+  SessionLiveListeners,
+  SessionLiveProjection,
+  SessionLiveView,
+  SessionWorkerStreamTransport,
+  SessionWorkerTransport,
+} from './session-worker/live-state.ts'
 
 declare module '@deepseek-ai/cordis' {
   interface Context {

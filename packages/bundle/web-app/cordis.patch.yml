@@ -117,6 +117,20 @@
     - id: plugin-inventory
       name: '@deepseek-ai/dsh-host-plugin-inventory'
 
+    # Per-session Agent processes. The host keeps the browser transport, cold
+    # reads, live follow/control, and every non-Session surface; Session write
+    # endpoints route to the worker that owns the Agent. Opening a Session does
+    # not spawn a worker — the first routed write does — and an idle worker is
+    # reclaimed after the TTL below. `DSH_SESSION_WORKER_IDLE_MS` is a
+    # temporary benchmark and test seam.
+    - id: session-worker-host
+      name: '@deepseek-ai/dsh-session-worker-host'
+      config:
+        idleTimeoutMs: !!js Number(process.env.DSH_SESSION_WORKER_IDLE_MS ?? 60000)
+        readyTimeoutMs: 60000
+        shutdownTimeoutMs: 10000
+        graceMs: 10000
+
     # Session commands, cold reads, and live control over Typert Remote.
     - id: session-controller
       name: '@deepseek-ai/dsh-api-session-controller'

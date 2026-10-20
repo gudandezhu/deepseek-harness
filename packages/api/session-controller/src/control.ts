@@ -28,6 +28,19 @@ export class SessionControlController {
         seq,
       })
     })
+    // Worker projections arrive as ordinary replacement frames so one control
+    // generation covers both in-process and delegated Sessions. Injection is
+    // reactive because the host plugin may mount after this service.
+    ctx.inject(['sessionWorkerLives'], (liveCtx) => {
+      const lives = liveCtx.get('sessionWorkerLives')
+      if (lives === undefined) return
+      liveCtx.effect(() => lives.observe({
+        event: () => {},
+        assistant: () => {},
+        generation: () => {},
+        projection: update => this.broadcast({ type: 'projection', ...update }),
+      }), 'session-controller.control.workers')
+    })
     ctx.effect(() => () => {
       for (const stream of this.streams) stream.end()
       this.streams.clear()
@@ -54,8 +67,12 @@ export class SessionControlController {
 
   private baseline(): SessionControlBaseline {
     const sessions = this.ctx.sessions.list()
+    const delegated = this.ctx.get('sessionWorkerLives')?.projectionBaselines()
     return {
-      projections: this.projectionBaseline(sessions),
+      projections: {
+        ...this.projectionBaseline(sessions),
+        ...delegated,
+      },
     }
   }
 

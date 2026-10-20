@@ -566,10 +566,25 @@ export interface SessionPage {
   readonly hasMore: boolean
 }
 
-/** Complete opening window followed by ordered durable events and opted-in assistant frames. */
+/**
+ * Opening window, complete window replacement, or one live entry.
+ *
+ * `reset` replaces every window, projection, and Assistant baseline the
+ * client currently holds, including a cursor that moved backwards after a
+ * worker crash. `snapshot` only opens a follow generation.
+ */
 export type SessionFollowFrame =
   | {
     readonly type: 'snapshot'
+    readonly header: SessionWireHeader
+    readonly cursor: number
+    readonly records: readonly SessionHistoryRecord[]
+    readonly hasMore: boolean
+    readonly projections: SessionProjectionBaseline
+    readonly assistantStream?: SessionAssistantStreamBaseline
+  }
+  | {
+    readonly type: 'reset'
     readonly header: SessionWireHeader
     readonly cursor: number
     readonly records: readonly SessionHistoryRecord[]

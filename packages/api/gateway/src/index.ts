@@ -79,6 +79,7 @@ export type {
   TypertRemoteEventInvocation,
   TypertRemoteEventOutcome,
   TypertRemoteEventSource,
+  TypertEndpointRouter,
 } from './types.ts'
 export type { RemoteEventHostInfo } from './stream-protocol.ts'
 

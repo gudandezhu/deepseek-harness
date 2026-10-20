@@ -1,7 +1,7 @@
 /** Process-local assistant state retained for reconnecting Web followers. */
 
 import type { AssistantStreamFrame } from '@deepseek-ai/dsh-agent'
-import { AssistantStreamAccumulator } from '@deepseek-ai/dsh-llm'
+import { AssistantStreamAccumulator, type TimedStreamChunk } from '@deepseek-ai/dsh-llm'
 import type { SessionSeqCursor } from '@deepseek-ai/dsh-session'
 import type { JsonValue } from '@deepseek-ai/dsh-util-values'
 import type {
@@ -73,6 +73,34 @@ export class SessionAssistantStreamAccumulator {
       case 'end':
         this.activeAttempt = undefined
         break
+    }
+    this.dirty = true
+  }
+
+  /**
+   * Adopt a baseline received from another process without replaying its
+   * individual frames, so later dense revisions continue from it.
+   * @param baseline - complete process-local Assistant state at one revision.
+   */
+  seed(baseline: SessionAssistantStreamBaseline): void {
+    this.revision = baseline.revision
+    const active = baseline.activeAttempt
+    if (active === undefined) {
+      this.activeAttempt = undefined
+    } else {
+      const stream = new AssistantStreamAccumulator()
+      for (const entry of active.stream) {
+        // Baseline entries are the accumulator's own detached `{ time, chunk }` records.
+        stream.push(entry as unknown as TimedStreamChunk)
+      }
+      this.activeAttempt = {
+        attemptId: active.attemptId,
+        startedAfterSeq: active.startedAfterSeq,
+        turn: active.turn,
+        step: active.step,
+        stream,
+        nextIndex: active.nextIndex,
+      }
     }
     this.dirty = true
   }
