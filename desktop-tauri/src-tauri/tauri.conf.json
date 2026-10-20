@@ -4,7 +4,7 @@
   "version": "0.24.5",
   "identifier": "dsh-tauri",
   "build": {
-    "beforeDevCommand": "pnpm dev",
+    "beforeDevCommand": "node ./node_modules/vite/bin/vite.js",
     "devUrl": "http://localhost:1420",
     "beforeBuildCommand": "pnpm build",
     "frontendDist": "../dist"

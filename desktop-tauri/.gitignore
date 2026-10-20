@@ -35,6 +35,10 @@ source/
 .tmp-alpha-inspect
 .dsh.dev
 
+# `just dev-desktop` 生成的内核入口：指向本仓库 apps/cli，供 Tauri 壳以
+# `DSH_CLI_PATH` 识别为本地核心。
+.local-kernel/
+
 # expo / react-native（移动端）构建产物
 .expo/
 android/

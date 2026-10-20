@@ -1995,27 +1995,11 @@ pub fn builder() -> tauri::Builder<tauri::Wry> {
 
     // Notifications plugin（Choochmeque fork）：壳层发带交互按钮的通知，并通过
     // `onNotificationClicked` / `onAction` 收点击与按钮动作——官方插件在桌面端 `show()`
-    // 之后即丢弃 handle，拿不到这两类事件。macOS 上它需要 Xcode 16+（Swift 6 typed throws），
-    // CI 见 .github/workflows/ci.yml 的 `Select Xcode 16`。
+    // 之后即丢弃 handle，拿不到这两类事件。
     //
-    // macOS 上它还要求进程跑在 `.app` 包内（`UNUserNotificationCenter` 的前置条件，见 vendor 的
-    // `macos::validation::require_bundle`）：`tauri dev` 跑的是裸二进制，注册它会让插件初始化
-    // 直接报错、整个应用起不来，所以未打包时跳过这条通路（打包后自动生效）。
-    #[cfg(target_os = "macos")]
-    let in_app_bundle = std::env::current_exe()
-        .map(|exe| exe.to_string_lossy().contains(".app/Contents/MacOS/"))
-        .unwrap_or(false);
-    #[cfg(not(target_os = "macos"))]
-    let in_app_bundle = true;
-    let builder = if in_app_bundle {
-        builder.plugin(tauri_plugin_notifications::init())
-    } else {
-        log::warn!(
-            "未运行在 .app 包内，跳过 tauri-plugin-notifications：macOS 的系统通知需要 .app 包，\
-             打包后自动生效"
-        );
-        builder
-    };
+    // macOS 用 notify-rust 后端（见 Cargo.toml 的 `notify-rust` feature），初始化不要求
+    // 进程位于 `.app` 包内，因此 `tauri dev` 的裸二进制也能发送通知。
+    let builder = builder.plugin(tauri_plugin_notifications::init());
 
     // `dsh://` 深链（成功页「打开应用」按钮）只在打包态启用：debug 注册会把系统
     // `dsh:` 指向调试产物，与官方 Electron 的 `app.isPackaged` 门禁一致。
