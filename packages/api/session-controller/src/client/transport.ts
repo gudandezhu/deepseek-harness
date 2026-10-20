@@ -54,6 +54,13 @@ export type SessionJournalChange =
     readonly entries: readonly SessionEventLikeEntry[]
     readonly hasMore: boolean
   }
+  | {
+    /** Replace every window and derived value after the source reset its cursor. */
+    readonly type: 'reset'
+    readonly page: SessionJournalPage
+    readonly entries: readonly SessionEventLikeEntry[]
+    readonly hasMore: boolean
+  }
   | { readonly type: 'append'; readonly entry: SessionLiveEventEntry }
   | { readonly type: 'assistant-stream'; readonly frame: SessionAssistantStreamFrame }
 
@@ -65,6 +72,7 @@ function toSessionJournalChange(
   switch (change.type) {
     case 'replace':
     case 'prepend':
+    case 'reset':
       return { ...change, entries: historyEntries(change.entries) }
     case 'append': {
       return {
@@ -181,7 +189,7 @@ export class SessionEventStream extends RemoteJournalStream<
       assistantStream: true,
       ...this.repairRequest(request),
     }, signal)) {
-      if (frame.type === 'snapshot') {
+      if (frame.type === 'snapshot' || frame.type === 'reset') {
         for (const record of frame.records) assertSessionWireEvent(record.event)
         if (frame.assistantStream === undefined) {
           throw new RemoteError(
@@ -192,7 +200,7 @@ export class SessionEventStream extends RemoteJournalStream<
         }
         assistantRevision = frame.assistantStream.revision
         yield {
-          type: 'opened',
+          type: frame.type === 'snapshot' ? 'opened' : 'reset',
           cursor: frame.cursor,
           page: {
             records: frame.records,

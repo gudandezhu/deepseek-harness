@@ -224,6 +224,33 @@ describe('RemoteJournalStream', () => {
     await fixture.journal.dispose()
   })
 
+  it('replaces the window when the source resets to a lower cursor', async () => {
+    const fixture = journalFixture(
+      [{
+        frames: [
+          opened(5, page('initial', [4, 5])),
+          { type: 'entry', entry: { seq: 6 } },
+          { type: 'reset', cursor: 2, page: page('reset', [0, 1, 2]) },
+          { type: 'entry', entry: { seq: 3 } },
+        ],
+        hold: true,
+      }],
+      [],
+    )
+
+    await fixture.journal.open({})
+    await vi.waitFor(() => {
+      expect(fixture.changes.map(change => change.type)).toEqual(['replace', 'append', 'reset', 'append'])
+    })
+    expect(fixture.changes[2]).toMatchObject({
+      type: 'reset',
+      entries: [{ seq: 0 }, { seq: 1 }, { seq: 2 }],
+      hasMore: false,
+    })
+    expect(fixture.failed).not.toHaveBeenCalled()
+    await fixture.journal.dispose()
+  })
+
   it('defers notifications behind a durable gap until replacement commits', async () => {
     const repair = Promise.withResolvers<Page>()
     const fixture = journalFixture(

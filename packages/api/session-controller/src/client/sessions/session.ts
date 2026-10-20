@@ -656,6 +656,17 @@ export class Session implements SessionFace {
       case 'prepend':
         this.prependWindow(change.entries, change.hasMore)
         return
+      case 'reset':
+        // The source replaced its window, possibly at a lower cursor. Values
+        // derived from the old window must not survive the replacement.
+        this.projections.clear()
+        this.installWindow(
+          change.entries,
+          change.hasMore,
+          change.page.projections === undefined ? undefined : projectionsBaseline(change.page.projections),
+          change.page.assistantStream,
+        )
+        return
       case 'append':
         this.publishAssistantEntry(this.assistantStream.acceptDurable(change.entry))
         return

@@ -13,9 +13,15 @@ function protocolViolation(message: string): RemoteError<'gateway/internal'> {
   return new RemoteError('gateway/internal', message, {})
 }
 
-/** Transport-neutral opening snapshot, durable entry, or cursorless notification. */
+/**
+ * Transport-neutral opening snapshot, complete window replacement, durable
+ * entry, or cursorless notification. A replacement may move backwards after
+ * the source process lost its durable tail and must discard every derived
+ * value, not merge with the previous window.
+ */
 export type RemoteJournalFrame<Entry, Cursor, Page, Notification = never> =
   | { readonly type: 'opened'; readonly cursor: Cursor; readonly page: Page }
+  | { readonly type: 'reset'; readonly cursor: Cursor; readonly page: Page }
   | { readonly type: 'entry'; readonly entry: Entry }
   | ([Notification] extends [never]
     ? never
@@ -25,6 +31,13 @@ export type RemoteJournalFrame<Entry, Cursor, Page, Notification = never> =
 export type RemoteJournalChange<Page, Entry, Notification = never> =
   | {
     readonly type: 'replace'
+    readonly page: Page
+    readonly entries: readonly Entry[]
+    readonly hasMore: boolean
+  }
+  | {
+    /** The source explicitly replaced its window; derived state must clear first. */
+    readonly type: 'reset'
     readonly page: Page
     readonly entries: readonly Entry[]
     readonly hasMore: boolean
@@ -247,6 +260,10 @@ export abstract class RemoteJournalStream<
         if (item.value.type === 'opened') {
           throw protocolViolation(`${this.options.name} emitted more than one opening cursor`)
         }
+        if (item.value.type === 'reset') {
+          this.applyReset(item)
+          continue
+        }
         if (item.value.type === 'notification') {
           this.publishNotification(item.value.notification)
           continue
@@ -262,8 +279,22 @@ export abstract class RemoteJournalStream<
     initial: JournalStreamItem<Page, Entry, Cursor, Notification>,
     resumed: boolean,
   ): void {
+    if (initial.value.type === 'reset') {
+      this.applyReset(initial)
+      return
+    }
     const opening = this.opening(initial, resumed)
     this.replaceFromOpening(opening.page, opening.cursor)
+  }
+
+  /**
+   * Apply an explicit source replacement. Unlike an opening cursor, a reset
+   * may move backwards, so the resume-cursor monotonicity check is skipped.
+   */
+  private applyReset(item: JournalStreamItem<Page, Entry, Cursor, Notification>): void {
+    if (item.value.type !== 'reset') return
+    this.generation = item.generation
+    this.replaceFromOpening(item.value.page, item.value.cursor, 'reset')
   }
 
   private opening(
@@ -286,7 +317,7 @@ export abstract class RemoteJournalStream<
   }
 
   /** Publish a generation's opening page without issuing a second Remote call. */
-  private replaceFromOpening(page: Page, cursor: Cursor): void {
+  private replaceFromOpening(page: Page, cursor: Cursor, type: 'replace' | 'reset' = 'replace'): void {
     this.assertPageThrough(page, cursor)
     const entries = [...this.options.entries(page)]
     this.assertPage(entries)
@@ -295,7 +326,7 @@ export abstract class RemoteJournalStream<
     this.lastCursor = cursor
     this.setResumeCursor(cursor)
     this.options.publish({
-      type: 'replace',
+      type,
       page,
       entries,
       hasMore: this.options.hasMore(page),
@@ -433,6 +464,7 @@ export abstract class RemoteJournalStream<
       }
       const item = result.value.value
       if (item.generation !== generation) return { type: 'superseded', item }
+      if (item.value.type === 'reset') return { type: 'superseded', item }
       if (item.value.type === 'opened') {
         throw protocolViolation(`${this.options.name} emitted more than one opening cursor`)
       }
@@ -463,6 +495,7 @@ export abstract class RemoteJournalStream<
       }
       const item = next.value
       if (item.generation !== generation) return { type: 'superseded', item }
+      if (item.value.type === 'reset') return { type: 'superseded', item }
       if (item.value.type === 'opened') {
         throw protocolViolation(`${this.options.name} emitted more than one opening cursor`)
       }
