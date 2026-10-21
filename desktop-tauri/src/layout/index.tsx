@@ -14,6 +14,7 @@ import { useCoreProfileSwitch } from '@/ui/config/hooks/use-core-profile-switch'
 import { toast } from '@/utils/toast'
 import { store } from '../store'
 import { Recovery } from '../ui/plugin/recovery'
+import { MemoryIndicator } from './components/memory-indicator'
 import { Webview } from './components/webview'
 import '../i18n'
 
@@ -150,6 +151,7 @@ export function App() {
   return (
     <div className="flex h-screen w-screen" data-testid="dsh-shell-root">
       <Webview />
+      <MemoryIndicator />
       <If cond={status === 'ready'}>
         {coreProfileSwitchHolder}
       </If>

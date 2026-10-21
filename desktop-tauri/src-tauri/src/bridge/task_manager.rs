@@ -1,9 +1,10 @@
 use std::collections::{HashMap, HashSet};
+use std::ffi::{OsStr, OsString};
 use std::sync::{Mutex, OnceLock};
 use std::time::{Duration, Instant};
 
 use serde::Serialize;
-use sysinfo::{Pid, ProcessRefreshKind, ProcessesToUpdate, System};
+use sysinfo::{Pid, ProcessRefreshKind, ProcessesToUpdate, System, UpdateKind};
 use tauri::Manager;
 
 use crate::service::workflow;
@@ -14,6 +15,9 @@ pub struct TaskManagerProcess {
     parent_pid: Option<u32>,
     name: String,
     kind: &'static str,
+    /// Memory-accounting bucket: the shell itself, a per-session worker, or
+    /// everything else (Harness service, WebView helpers, plugin children).
+    group: &'static str,
     cpu_percent: Option<f32>,
     memory_bytes: u64,
     run_time: u64,
@@ -93,6 +97,27 @@ fn process_kind(
     Some(("child", can_end))
 }
 
+/// Per-session workers are ordinary Node children; their argv is the only
+/// stable marker (`dsh --profile session-worker`, or `--profile=...`).
+fn is_session_worker(command: &[OsString]) -> bool {
+    command
+        .iter()
+        .any(|arg| arg == OsStr::new("--profile=session-worker"))
+        || command.windows(2).any(|pair| {
+            pair[0] == OsStr::new("--profile") && pair[1] == OsStr::new("session-worker")
+        })
+}
+
+fn process_group(pid: u32, desktop: u32, kind: &str, command: &[OsString]) -> &'static str {
+    if pid == desktop {
+        "desktop"
+    } else if kind == "child" && is_session_worker(command) {
+        "session-worker"
+    } else {
+        "other"
+    }
+}
+
 impl Monitor {
     fn refresh(&mut self) {
         if self
@@ -116,7 +141,8 @@ impl Monitor {
             ProcessRefreshKind::nothing()
                 .without_tasks()
                 .with_cpu()
-                .with_memory(),
+                .with_memory()
+                .with_cmd(UpdateKind::OnlyIfNotSet),
         );
         self.cpu_ready = if warm { previous } else { HashSet::new() };
         self.sampled_at = Some(Instant::now());
@@ -150,6 +176,7 @@ impl Monitor {
                     parent_pid: process.parent().map(Pid::as_u32),
                     name: process.name().to_string_lossy().into_owned(),
                     kind,
+                    group: process_group(pid, desktop, kind, process.cmd()),
                     cpu_percent,
                     memory_bytes: process.memory(),
                     run_time: process.run_time(),
@@ -253,6 +280,34 @@ mod tests {
     }
 
     #[test]
+    fn groups_only_session_worker_children_by_argv() {
+        let worker = [
+            OsString::from("node"),
+            OsString::from("dsh"),
+            OsString::from("--profile"),
+            OsString::from("session-worker"),
+        ];
+        let worker_inline = [
+            OsString::from("dsh"),
+            OsString::from("--profile=session-worker"),
+        ];
+        let harness = [
+            OsString::from("node"),
+            OsString::from("dsh"),
+            OsString::from("--profile"),
+            OsString::from("tauri"),
+        ];
+        assert!(is_session_worker(&worker));
+        assert!(is_session_worker(&worker_inline));
+        assert!(!is_session_worker(&harness));
+        assert!(!is_session_worker(&[]));
+        assert_eq!(process_group(10, 10, "desktop", &worker), "desktop");
+        assert_eq!(process_group(30, 10, "child", &worker), "session-worker");
+        assert_eq!(process_group(40, 10, "child", &harness), "other");
+        assert_eq!(process_group(20, 10, "harness", &worker), "other");
+    }
+
+    #[test]
     fn excludes_reused_parents_missing_parents_and_cycles() {
         let parents = HashMap::from([
             (10, (None, 100)),
@@ -274,6 +329,7 @@ mod tests {
             parent_pid: Some(20),
             name: "worker".into(),
             kind: "child",
+            group: "session-worker",
             cpu_percent: None,
             memory_bytes: 0,
             run_time: 1,

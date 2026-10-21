@@ -12,19 +12,8 @@ import { useStore } from 'valtio-define'
 import { Logs } from '@/components/logs'
 import { queryKeys } from '@/config/query-keys'
 import { store } from '@/store'
+import type { TaskProcess } from '@/types'
 import { toast } from '@/utils/toast'
-
-interface TaskProcess {
-  pid: number
-  parent_pid: number | null
-  name: string
-  kind: 'desktop' | 'harness' | 'child'
-  cpu_percent: number | null
-  memory_bytes: number
-  run_time: number
-  start_time: number
-  can_end: boolean
-}
 
 type SortKey = 'name' | 'pid' | 'cpu_percent' | 'memory_bytes' | 'run_time'
 
