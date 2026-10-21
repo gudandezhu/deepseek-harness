@@ -14,6 +14,7 @@ import { randomUUID } from 'node:crypto'
 import type { Context } from '@deepseek-ai/cordis'
 import type { RemoteAccessAction } from '@deepseek-ai/dsh-api-remote-access'
 import type { ConnectionRpcResult } from '@deepseek-ai/dsh-client-connection'
+import type {} from '@deepseek-ai/dsh-agent'
 import type {} from '@deepseek-ai/dsh-agent-preset-registry'
 import type { SessionId } from '@deepseek-ai/dsh-session'
 import { WorkspaceId, type Workspace, type WorkspaceRegistry } from '@deepseek-ai/dsh-workspace'
@@ -132,6 +133,11 @@ export class SessionWorkerRouter implements TypertEndpointRouter, SessionReminde
     if (target === undefined) return undefined
     const denied = this.denied(endpoint, target.sessionId, args, peer)
     if (denied !== undefined) return Promise.resolve(denied)
+    // A Host-owned Agent already holds this Session's write lease — the
+    // desktop continue path and other Host surfaces keep one alive. Spawning a
+    // worker would contend with that lease and fail the call; let the local
+    // Agent serve it instead.
+    if (this.ctx.get('agents')?.get(target.sessionId) !== undefined) return undefined
     const live = this.supervisor.get(target.sessionId)
     // A cold cancel or job control call has no worker-owned state; the host
     // path owns the canonical "not attached" and "unknown job" failures.

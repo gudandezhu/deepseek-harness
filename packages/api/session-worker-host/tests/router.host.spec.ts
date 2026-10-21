@@ -26,6 +26,8 @@ function setup(options: {
   readonly attachFailure?: Error
   /** The Host's current default Agent preset. */
   readonly defaultPreset?: string
+  /** Whether the Host already owns a live Agent for the addressed Session. */
+  readonly hostAgent?: boolean
 } = {}) {
   const ctx = new Context()
   ctx.provide('remoteAccess', {
@@ -49,6 +51,9 @@ function setup(options: {
   } as never)
   if (options.defaultPreset !== undefined) {
     ctx.provide('agentPresets', { defaultId: options.defaultPreset } as never)
+  }
+  if (options.hostAgent === true) {
+    ctx.provide('agents', { get: (id: SessionId) => id === sessionId ? {} : undefined } as never)
   }
   const call = vi.fn(async (..._args: unknown[]): Promise<ConnectionRpcResult<unknown>> => ({
     ok: true,
@@ -85,6 +90,14 @@ describe('Session worker host router', () => {
     expect(forwarded[0]).toBe('session/prompt')
     expect(forwarded[1]).toEqual({ request: { sessionId } })
     expect((forwarded[2] as { readonly signal?: unknown }).signal).toBeInstanceOf(AbortSignal)
+  })
+
+  it('leaves a Session already owned by a live Host Agent to the host', async () => {
+    const { router, acquired, call } = setup({ hostAgent: true })
+    expect(router.dispatch('session/prompt', payload({ request: { sessionId } }), new AbortController().signal, owner))
+      .toBeUndefined()
+    expect(acquired).not.toHaveBeenCalled()
+    expect(call).not.toHaveBeenCalled()
   })
 
   it('leaves a cold cancel and a cold job kill to the host', async () => {
