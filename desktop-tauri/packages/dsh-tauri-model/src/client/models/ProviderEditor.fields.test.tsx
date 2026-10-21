@@ -4,7 +4,7 @@ import type { ProviderEditorProps } from './ProviderEditor'
 import type { SettingsSchemaOperations } from './schema-operations'
 import { act, cleanup, fireEvent, render, screen } from '@testing-library/react'
 import { afterEach, expect, it, vi } from 'vitest'
-import { pathOps, ProviderEditor } from './ProviderEditor'
+import { ProviderEditor } from './ProviderEditor'
 
 vi.mock('./styles.ts', () => ({ modelStyles: {} }))
 vi.mock('@deepseek-ai/dsh-client-store', () => ({
@@ -127,7 +127,14 @@ function setup(profile: Record<string, unknown>, writeSettings: ProviderEditorPr
   return { props, view: render(<ProviderEditor {...props} />) }
 }
 
-it('edits headers through the draft and removes the key when the text empties', async () => {
+it('shows the API key and API address without a request-header editor', () => {
+  setup({ api: 'openai-completions', baseURL: 'http://127.0.0.1:8092/v1', models: [{ id: 'lab-model' }] }, vi.fn())
+  expect(screen.getByLabelText('keyInput')).toBeTruthy()
+  expect((screen.getByLabelText('baseUrl') as HTMLInputElement).value).toBe('http://127.0.0.1:8092/v1')
+  expect(screen.queryByLabelText('requestHeaders')).toBeNull()
+})
+
+it('preserves stored headers when saving another field', async () => {
   const writes: SettingsPathOpView[][] = []
   let profile: Record<string, unknown> = {
     api: 'openai-completions',
@@ -141,34 +148,12 @@ it('edits headers through the draft and removes the key when the text empties', 
     return { kind: 'written' as const, view: namespace(profile) }
   })
   setup(profile, writeSettings)
-  expect((screen.getByLabelText('requestHeaders') as HTMLTextAreaElement).value).toBe('X-Lab-Token: old')
-  fireEvent.change(screen.getByLabelText('requestHeaders'), { target: { value: 'X-Lab-Token: lab-639\nX-Trace: a:b' } })
+  fireEvent.change(screen.getByLabelText('baseUrl'), { target: { value: 'http://127.0.0.1:8093/v1' } })
   await act(async () => {
     fireEvent.click(screen.getByText('apply'))
   })
   expect(writes[0]).toEqual([
-    { op: 'set', path: ['providers', 'custom', 'headers'], value: { 'X-Lab-Token': 'lab-639', 'X-Trace': 'a:b' } },
+    { op: 'set', path: ['providers', 'custom', 'baseURL'], value: 'http://127.0.0.1:8093/v1' },
   ])
-  fireEvent.change(screen.getByLabelText('requestHeaders'), { target: { value: '' } })
-  await act(async () => {
-    fireEvent.click(screen.getByText('apply'))
-  })
-  expect(writes[1]).toEqual([
-    { op: 'unset', path: ['providers', 'custom', 'headers'] },
-  ])
-})
-
-it('blocks the apply button while a header name is malformed', () => {
-  const writeSettings = vi.fn()
-  setup({ api: 'openai-completions', baseURL: 'http://127.0.0.1:8092/v1', models: [{ id: 'lab-model' }] }, writeSettings)
-  fireEvent.change(screen.getByLabelText('requestHeaders'), { target: { value: 'Bad Name: value' } })
-  expect(screen.getByText('headerNameInvalid')).toBeTruthy()
-  expect((screen.getByText('apply') as HTMLButtonElement).disabled).toBe(true)
-  expect(writeSettings).not.toHaveBeenCalled()
-})
-
-it('turns a request header record back into editable text and drops unknown values', () => {
-  expect(pathOps([], { headers: { A: '1' } }, { headers: { A: '2' } })).toEqual([
-    { op: 'set', path: ['headers'], value: { A: '2' } },
-  ])
+  expect(profile.headers).toEqual({ 'X-Lab-Token': 'old' })
 })

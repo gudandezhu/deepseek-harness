@@ -64,7 +64,7 @@ function fill(route: string, baseURL: string): void {
   fireEvent.click(screen.getByText('pick-model'))
 }
 
-it('writes parsed headers into the provider profile and ignores comment lines', async () => {
+it('creates a provider without a request-header field', async () => {
   const written: SettingsPathOpView[][] = []
   const writeSettings = vi.fn(async (_ns: string, ops: SettingsPathOpView[]) => {
     written.push(ops)
@@ -78,9 +78,7 @@ it('writes parsed headers into the provider profile and ignores comment lines', 
     discoverModels: vi.fn(),
   })
   fill('acme-gateway', 'http://127.0.0.1:8092/v1')
-  fireEvent.change(screen.getByLabelText('requestHeaders'), {
-    target: { value: '# internal gateway\nX-Lab-Token: lab-639\nX-Trace: a:b' },
-  })
+  expect(screen.queryByLabelText('requestHeaders')).toBeNull()
   await act(async () => {
     fireEvent.click(screen.getByText('create'))
   })
@@ -91,7 +89,6 @@ it('writes parsed headers into the provider profile and ignores comment lines', 
       value: {
         api: 'openai-completions',
         baseURL: 'http://127.0.0.1:8092/v1',
-        headers: { 'X-Lab-Token': 'lab-639', 'X-Trace': 'a:b' },
         models: [{ id: 'lab-model' }],
       },
     },
@@ -99,39 +96,7 @@ it('writes parsed headers into the provider profile and ignores comment lines', 
   expect(onClose).toHaveBeenCalledWith(true)
 })
 
-it('rejects a malformed header name before writing', () => {
-  const writeSettings = vi.fn()
-  setup({
-    describeCredential: vi.fn(),
-    storeCredential: vi.fn(),
-    removeCredential: vi.fn(),
-    writeSettings,
-    discoverModels: vi.fn(),
-  })
-  fill('acme-gateway', 'http://127.0.0.1:8092/v1')
-  fireEvent.change(screen.getByLabelText('requestHeaders'), { target: { value: 'X Org: value' } })
-  expect(screen.getByText('headerNameInvalid')).toBeTruthy()
-  expect((screen.getByText('create') as HTMLButtonElement).disabled).toBe(true)
-  fireEvent.click(screen.getByText('create'))
-  expect(writeSettings).not.toHaveBeenCalled()
-})
-
-it('reports a duplicated header name and refuses to submit', () => {
-  const writeSettings = vi.fn()
-  setup({
-    describeCredential: vi.fn(),
-    storeCredential: vi.fn(),
-    removeCredential: vi.fn(),
-    writeSettings,
-    discoverModels: vi.fn(),
-  })
-  fill('acme-gateway', 'http://127.0.0.1:8092/v1')
-  fireEvent.change(screen.getByLabelText('requestHeaders'), { target: { value: 'X-Lab-Token: a\nx-lab-token: b' } })
-  expect(screen.getByText('headerNameDuplicate')).toBeTruthy()
-  expect((screen.getByText('create') as HTMLButtonElement).disabled).toBe(true)
-})
-
-it('hands the headers to the model list probe so a guarded endpoint can be read', () => {
+it('hands only the endpoint and protocol to the model list probe', () => {
   const writeSettings = vi.fn()
   const { rendered } = setup({
     describeCredential: vi.fn(),
@@ -141,12 +106,10 @@ it('hands the headers to the model list probe so a guarded endpoint can be read'
     discoverModels: vi.fn(),
   })
   fill('acme-gateway', 'http://127.0.0.1:8092/v1')
-  fireEvent.change(screen.getByLabelText('requestHeaders'), { target: { value: 'X-Lab-Token: lab-639' } })
   const probe = JSON.parse(rendered.container.querySelector('[data-probe]')!.getAttribute('data-probe')!) as Record<string, unknown>
   expect(probe).toEqual({
     settingsNs: 'llm-pi-ai',
     baseURL: 'http://127.0.0.1:8092/v1',
     api: 'openai-completions',
-    headers: { 'X-Lab-Token': 'lab-639' },
   })
 })

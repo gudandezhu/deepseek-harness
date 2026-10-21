@@ -3,10 +3,6 @@ export interface RequestHeader {
   value: string
 }
 
-export type RequestHeaderFailureKey = 'headerNameInvalid' | 'headerValueInvalid' | 'headerNameDuplicate'
-
-const HEADER_NAME = /^[!#$%&'*+.^\w`|~-]+$/
-const HEADER_VALUE = /^[\t\x20-\x7E\x80-\xFF]*$/
 const COMMENT_PREFIX = '#'
 const PAIR_SEPARATOR = ':'
 
@@ -24,21 +20,6 @@ export function parseRequestHeaders(text: string): RequestHeader[] {
     headers.push({ name: line.slice(0, at).trim(), value: line.slice(at + 1).trim() })
   }
   return headers
-}
-
-export function requestHeaderFailure(headers: readonly RequestHeader[]): RequestHeaderFailureKey | undefined {
-  const seen = new Set<string>()
-  for (const header of headers) {
-    if (!HEADER_NAME.test(header.name))
-      return 'headerNameInvalid'
-    if (!HEADER_VALUE.test(header.value))
-      return 'headerValueInvalid'
-    const name = header.name.toLowerCase()
-    if (seen.has(name))
-      return 'headerNameDuplicate'
-    seen.add(name)
-  }
-  return undefined
 }
 
 export function requestHeadersRecord(headers: readonly RequestHeader[]): Record<string, string> {

@@ -1,7 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import {
   parseRequestHeaders,
-  requestHeaderFailure,
   requestHeadersRecord,
   requestHeadersText,
 } from './requestHeaders.ts'
@@ -34,31 +33,6 @@ describe('parseRequestHeaders', () => {
 
   it('returns nothing for empty input', () => {
     expect(parseRequestHeaders('')).toEqual([])
-  })
-})
-
-describe('requestHeaderFailure', () => {
-  it('accepts fetch-representable names and values', () => {
-    expect(requestHeaderFailure([{ name: 'X-Org-Id', value: 'a b\tc' }])).toBeUndefined()
-    expect(requestHeaderFailure([])).toBeUndefined()
-  })
-
-  it('rejects names outside the HTTP token charset', () => {
-    expect(requestHeaderFailure([{ name: 'X Org', value: '1' }])).toBe('headerNameInvalid')
-    expect(requestHeaderFailure([{ name: '', value: '1' }])).toBe('headerNameInvalid')
-    expect(requestHeaderFailure([{ name: 'X-Org:Id', value: '1' }])).toBe('headerNameInvalid')
-  })
-
-  it('rejects values that a header cannot carry', () => {
-    expect(requestHeaderFailure([{ name: 'X-Org', value: 'a\nb' }])).toBe('headerValueInvalid')
-    expect(requestHeaderFailure([{ name: 'X-Org', value: 'a\u4E2D' }])).toBe('headerValueInvalid')
-  })
-
-  it('rejects case-insensitive duplicates', () => {
-    expect(requestHeaderFailure([
-      { name: 'X-Org-Id', value: '1' },
-      { name: 'x-org-id', value: '2' },
-    ])).toBe('headerNameDuplicate')
   })
 })
 

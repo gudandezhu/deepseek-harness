@@ -18,7 +18,7 @@ import {
 import { EditorFooter } from './EditorFooter.tsx'
 import { ModelListEditor } from './ModelListEditor.tsx'
 import { protocolLabel } from './protocol-label.ts'
-import { parseRequestHeaders, requestHeaderFailure, requestHeadersRecord, requestHeadersText } from './requestHeaders.ts'
+import { parseRequestHeaders, requestHeadersRecord, requestHeadersText } from './requestHeaders.ts'
 import { deriveKeyRef, protocolChoices } from './store.ts'
 import { modelStyles as styles } from './styles.ts'
 
@@ -101,9 +101,6 @@ function refFor(
 export function ProviderEditor(props: ProviderEditorProps): ReactNode {
   const { namespace, schema, settingsPath, operations, t } = props
   const [draft, setDraft] = useState<Record<string, unknown>>(() => draftAt(schema, namespace, settingsPath))
-  const [headersDraft, setHeadersDraft] = useState(
-    () => requestHeadersText(schema.getPath(draft, ['headers'])),
-  )
   const [keyDraft, setKeyDraft] = useState('')
   const [credential, setCredential] = useState<{
     keyRef: string
@@ -162,19 +159,11 @@ export function ProviderEditor(props: ProviderEditorProps): ReactNode {
       ? schema.deletePath(current, [key])
       : schema.setPath(current, [key], value))
   }
-  const setHeaders = (text: string): void => {
-    setHeadersDraft(text)
-    const record = requestHeadersRecord(parseRequestHeaders(text))
-    setDraft(current => Object.keys(record).length === 0
-      ? schema.deletePath(current, ['headers'])
-      : schema.setPath(current, ['headers'], record))
-  }
-
   const modelFailure = validateDeepSeekModels(schema.getPath(draft, ['models']))
   const keyFailure = apiKeyFailure(keyDraft)
 
-  const headers = parseRequestHeaders(headersDraft)
-  const headerFailure = requestHeaderFailure(headers)
+  // Stored headers are still replayed when fetching models; the form no longer shows them.
+  const headers = parseRequestHeaders(requestHeadersText(schema.getPath(draft, ['headers'])))
 
   const keyValue = keyDraft.trim()
   const credentialRequiredFailure = props.credentialRequired === true
@@ -209,9 +198,6 @@ export function ProviderEditor(props: ProviderEditorProps): ReactNode {
         return `${t('model')} ${String(failure.index + 1)}: ${t(failure.key)}`
       }
     }
-
-    if (props.credentialOnly !== true && headerFailure !== undefined)
-      return t(headerFailure)
 
     if (props.credentialOnly !== true && node !== undefined && settingsPath.length === 0) {
       const sectionError = schema.validate(node, next)
@@ -330,109 +316,82 @@ export function ProviderEditor(props: ProviderEditorProps): ReactNode {
           />
           {shownKeyFailure === undefined ? null : <p className={styles.error}>{t(shownKeyFailure)}</p>}
         </div>
-        {props.credentialOnly === true
-          ? null
-          : (
+        <div className={styles.field}>
+          <span className={styles.fieldLabel}>{t('baseUrl')}</span>
+          <input
+            className={styles.input}
+            type="text"
+            value={stringAt(draft, 'baseURL') ?? ''}
+            placeholder={family === 'deepseek'
+              ? t('deepSeekBaseUrl')
+              : stringAt(fallback, 'baseURL') ?? t('baseUrlDefault')}
+            aria-describedby={family === 'deepseek' ? `${props.provider}-endpoint-hint` : undefined}
+            aria-label={t('baseUrl')}
+            disabled={disabled}
+            onChange={(event) => {
+              setField('baseURL', event.target.value === '' ? undefined : event.target.value)
+            }}
+          />
+          {family === 'deepseek' ? <span id={`${props.provider}-endpoint-hint`} className={styles.advancedHint}>{t('deepSeekEndpointHint')}</span> : null}
+        </div>
+        {ownsIdentity
+          ? (
               <details className={styles.customized}>
                 <summary className={styles.customizedSummary}>{t('customized')}</summary>
                 <div className={styles.customizedBody}>
-
-                  {ownsIdentity
-                    ? (
-                        <div className={styles.field}>
-                          <span className={styles.fieldLabel}>{t('customDisplayName')}</span>
-                          <input
-                            className={styles.input}
-                            type="text"
-                            value={stringAt(draft, 'displayName') ?? ''}
-
-                            placeholder={stringAt(schema.getPath(namespace.base, settingsPath), 'displayName')
-                              ?? props.provider}
-                            aria-label={t('customDisplayName')}
-                            disabled={disabled}
-                            onChange={(event) => { setField('displayName', event.target.value) }}
-                          />
-                        </div>
-                      )
-                    : null}
                   <div className={styles.field}>
-                    <span className={styles.fieldLabel}>{t('baseUrl')}</span>
+                    <span className={styles.fieldLabel}>{t('customDisplayName')}</span>
                     <input
                       className={styles.input}
                       type="text"
-                      value={stringAt(draft, 'baseURL') ?? ''}
-                      placeholder={family === 'deepseek'
-                        ? t('deepSeekBaseUrl')
-                        : stringAt(fallback, 'baseURL') ?? t('baseUrlDefault')}
-                      aria-describedby={family === 'deepseek' ? `${props.provider}-endpoint-hint` : undefined}
-                      aria-label={t('baseUrl')}
+                      value={stringAt(draft, 'displayName') ?? ''}
+                      placeholder={stringAt(schema.getPath(namespace.base, settingsPath), 'displayName')
+                        ?? props.provider}
+                      aria-label={t('customDisplayName')}
                       disabled={disabled}
-                      onChange={(event) => {
-                        setField('baseURL', event.target.value === '' ? undefined : event.target.value)
-                      }}
+                      onChange={(event) => { setField('displayName', event.target.value) }}
                     />
-                    {family === 'deepseek' ? <span id={`${props.provider}-endpoint-hint`} className={styles.advancedHint}>{t('deepSeekEndpointHint')}</span> : null}
                   </div>
-
-                  {ownsIdentity
-                    ? (
-                        <div className={styles.field}>
-                          <span className={styles.fieldLabel}>{t('customApi')}</span>
-                          <select
-                            className={`${styles.input} ${styles.selectInput}`}
-                            value={probeApi ?? ''}
-                            aria-label={t('customApi')}
-                            disabled={disabled}
-                            onChange={(event) => { setField('api', event.target.value) }}
-                          >
-
-                            {probeApi === undefined ? <option value="">{t('customApiUnset')}</option> : null}
-                            {protocols.map(choice => <option key={choice} value={choice}>{protocolLabel(t, choice)}</option>)}
-                          </select>
-                        </div>
-                      )
-                    : null}
-
                   <div className={styles.field}>
-                    <span className={styles.fieldLabel}>{t('requestHeaders')}</span>
-                    <textarea
-                      className={styles.headersInput}
-                      value={headersDraft}
-                      placeholder={t('requestHeadersPlaceholder')}
-                      aria-label={t('requestHeaders')}
-                      aria-invalid={headerFailure !== undefined}
+                    <span className={styles.fieldLabel}>{t('customApi')}</span>
+                    <select
+                      className={`${styles.input} ${styles.selectInput}`}
+                      value={probeApi ?? ''}
+                      aria-label={t('customApi')}
                       disabled={disabled}
-                      onChange={(event) => { setHeaders(event.target.value) }}
-                    />
-                    <span className={styles.advancedHint}>{t('requestHeadersHint')}</span>
-                    <span className={styles.advancedHint}>{t('requestHeadersProbeHint')}</span>
-                    {headerFailure === undefined ? null : <p className={styles.error}>{t(headerFailure)}</p>}
+                      onChange={(event) => { setField('api', event.target.value) }}
+                    >
+                      {probeApi === undefined ? <option value="">{t('customApiUnset')}</option> : null}
+                      {protocols.map(choice => <option key={choice} value={choice}>{protocolLabel(t, choice)}</option>)}
+                    </select>
                   </div>
-
-                  {family === 'deepseek'
-                    ? (
-                        <DeepSeekModelsEditor
-                          {...catalogProps}
-                          defaultContextWindow={typeof defaultContextWindow === 'number'
-                            ? defaultContextWindow
-                            : undefined}
-                          defaultMaxTokens={typeof defaultMaxTokens === 'number' ? defaultMaxTokens : undefined}
-                        />
-                      )
-                    : (
-                        <ModelListEditor
-                          {...catalogProps}
-                          catalogProvider={props.declared === true ? undefined : props.provider}
-                          defaultInput={Array.isArray(defaultInput) ? defaultInput : undefined}
-                          probe={probe}
-                          probeBlocked={keyFailure}
-                          operations={operations}
-                          onBusyChange={setListBusy}
-                        />
-                      )}
                 </div>
               </details>
-            )}
+            )
+          : null}
+        {props.credentialOnly === true
+          ? null
+          : family === 'deepseek'
+            ? (
+                <DeepSeekModelsEditor
+                  {...catalogProps}
+                  defaultContextWindow={typeof defaultContextWindow === 'number'
+                    ? defaultContextWindow
+                    : undefined}
+                  defaultMaxTokens={typeof defaultMaxTokens === 'number' ? defaultMaxTokens : undefined}
+                />
+              )
+            : (
+                <ModelListEditor
+                  {...catalogProps}
+                  catalogProvider={props.declared === true ? undefined : props.provider}
+                  defaultInput={Array.isArray(defaultInput) ? defaultInput : undefined}
+                  probe={probe}
+                  probeBlocked={keyFailure}
+                  operations={operations}
+                  onBusyChange={setListBusy}
+                />
+              )}
       </>
     )
   }
@@ -465,7 +424,6 @@ export function ProviderEditor(props: ProviderEditorProps): ReactNode {
         busy={busy}
         submitDisabled={disabled || layout === 'unknown'
           || (props.credentialOnly !== true && modelFailure !== undefined)
-          || (props.credentialOnly !== true && headerFailure !== undefined)
           || shownKeyFailure !== undefined
           || (props.credentialRequired === true && keyValue.length === 0)}
         submitLabelKey={props.submitLabelKey ?? 'apply'}
