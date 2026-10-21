@@ -40,7 +40,7 @@ macOS 运行时最低版本为 12+，Web 界面需要 Safari 17.4+ 能力。Linu
 
 在 deepseek-harness 仓库根目录执行 `just dev-desktop`：它生成本地内核入口 `desktop-tauri/.local-kernel`，把 `DSH_CLI_PATH` 指向本仓库的 `apps/cli`，再启动 `tauri dev`。壳层因此运行本仓库的 `dsh web`（含 session worker），而不是随包内核。Rust 热重载与 Vite HMR 不变。
 
-同一条命令把 `DSH_HOME` 设为 `${DSH_HOME:-$HOME/.dsh}`，桌面端与 CLI 因此共用一个 harness home。模型 provider 和默认模型放在 `$DSH_HOME/cordis.patch.yml`；API key 和 relay 地址放在 `$DSH_HOME/.env`。harness 把家目录 `.env` 作为独立一层加载，与启动目录无关。
+同一条命令把 `DSH_HOME` 设为 `${DSH_HOME:-$HOME/.dsh}`，桌面端与 CLI 因此共用一个 harness home。模型 provider 和默认模型放在 `$DSH_HOME/cordis.patch.yml`；桌面端「模型设置」读写同一份文件，改完桌面和 CLI 立即一致。API key 和 relay 地址放在 `$DSH_HOME/.env`。harness 把家目录 `.env` 作为独立一层加载，与启动目录无关。
 
 `pnpm typecheck` 通过 `tsconfig.typecheck.json` 检查工作区包源码，因此全新检出后只需 `pnpm install`，不依赖生成的声明文件或插件 watcher。构建和运行时仍通过包 exports 解析；CI 会单独构建共享包并验证其产物入口。
 

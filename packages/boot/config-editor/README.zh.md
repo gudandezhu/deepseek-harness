@@ -9,7 +9,7 @@ kind: "package-reference"
 
 ## 概述
 
-将插件配置保存到当前 profile 的 patch 并立即应用。写入在改动磁盘前验证完整候选值，并与 profile 更改及 HMR 串行执行。无效值和更高层覆盖不会改动文件。
+将插件配置保存到定义它的 Cordis patch 并立即应用。共享 home patch 承载的条目写在该文件；其余条目写当前 profile 的 patch。写入在改动磁盘前验证完整候选值，并与 profile 更改及 HMR 串行执行。无效值和更高层覆盖不会改动文件。
 
 ## 目录
 
@@ -64,7 +64,7 @@ kind: "package-reference"
 
 <a id="known-limitations-and-deferred-work"></a>
 
-- 编辑写入当前 profile patch。Home patch 和命令行 overlay 参与优先级解析，但不作为写入目标。
+- 编辑写入定义该条目的文档：共享 home patch 承载该条目时写它，否则写当前 profile patch。命令行 overlay 参与优先级解析，但不作为写入目标。
 - 完整配置覆盖保留普通字段，但会在 profile 层固定其当前原始值。
 - 仅可编辑 profile 根 Include 拥有且可唯一定位的条目。
 

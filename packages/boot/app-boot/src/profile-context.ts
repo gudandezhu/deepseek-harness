@@ -76,15 +76,21 @@ export function readBundlePatches(binName: string, context: ProfileContext, init
  * @param binName Diagnostic prefix for malformed or missing configuration.
  * @param context Data supplied by the profile launcher.
  * @param initialProfile Already loaded startup profile; omitted reads the current files.
+ * @param homePatches Replacement home layer for an editor writing that shared document; omitted reads the file.
  * @returns Detached ordered patches; this function does not update the Loader.
  */
-export function readProfilePatches(binName: string, context: ProfileContext, initialProfile?: Profile): PatchOptions[] {
+export function readProfilePatches(
+  binName: string,
+  context: ProfileContext,
+  initialProfile?: Profile,
+  homePatches?: PatchOptions[],
+): PatchOptions[] {
   const inherited = process.env[INHERITED_PROFILE_PATCH_ENV]
   const patches = structuredClone([
     ...readBundlePatches(binName, context, initialProfile),
     ...(initialProfile?.patches ?? loadOptionalPatches(binName, context.patchPath) ?? []),
     ...(inherited === undefined || inherited === '' ? [] : loadOptionalPatches(binName, inherited) ?? []),
-    ...(loadOptionalPatches(binName, join(context.home, PROFILE_PATCH_FILENAME)) ?? []),
+    ...(homePatches ?? loadOptionalPatches(binName, join(context.home, PROFILE_PATCH_FILENAME)) ?? []),
     ...context.overlays,
   ])
   const telemetryPatch = resolveTelemetryPatch(context.telemetryDisabledEnv,

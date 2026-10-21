@@ -36,13 +36,40 @@ it('isolates instances, hides ordinary fields, rejects invalid edits, and redact
   expect(ctx.settings.describe({ redactSecrets: true }).find(row => row.ns === 'first')!.value).toEqual({ count: 2, list: [] })
 })
 
-it('refuses an edit shadowed by a higher home layer', async () => {
+it('preserves expressions in the shared home layer while editing another live field', async () => {
+  const { ctx, home } = await fixture()
+  const homePath = join(home, 'cordis.patch.yml')
+  writeFileSync(homePath, `- id: first
+  config:
+    ordinary: !!js "'expression-value'"
+    count: 3
+`)
+  await ctx.settings.update('first', { count: 4 })
+  expect(readFileSync(homePath, 'utf8')).toContain('!!js')
+  expect(readFileSync(homePath, 'utf8')).toContain('expression-value')
+  expect(ctx.settings.describe().find(row => row.ns === 'first')!.value).toMatchObject({ count: 4 })
+  const entry = [...ctx.loader.entries()].find(row => row.options.id === 'first')!
+  expect((entry.fiber!.config as { ordinary: string }).ordinary).toBe('expression-value')
+})
+
+it('edits values defined by the shared home layer in that document', async () => {
   const { ctx, home, profile } = await fixture()
-  writeFileSync(join(home, 'cordis.patch.yml'), JSON.stringify([{ id: 'default-model', config: { provider: 'test', model: 'home' } }]))
+  const homePath = join(home, 'cordis.patch.yml')
+  writeFileSync(homePath, JSON.stringify([{ id: 'default-model', config: { provider: 'test', model: 'home' } }]))
   const before = readFileSync(profile.patchPath, 'utf8')
-  await expect(ctx.settings.update('default-model', { model: 'profile' })).rejects.toThrow('overridden')
+  expect(ctx.settings.describe().find(row => row.ns === 'default-model')).toMatchObject({
+    user: { provider: 'test', model: 'home' },
+    base: { provider: 'test', model: 'original' },
+  })
+  await ctx.settings.update('default-model', { model: 'shared' })
+  expect(ctx.agentDefaultModel.currentSelection()).toEqual({ provider: 'test', model: 'shared' })
+  expect(parse(readFileSync(homePath, 'utf8'))).toContainEqual({
+    id: 'default-model', config: { provider: 'test', model: 'shared' },
+  })
   expect(readFileSync(profile.patchPath, 'utf8')).toBe(before)
-  expect(ctx.agentDefaultModel.currentSelection().model).toBe('home')
+  await ctx.settings.update('default-model', { model: 'original' })
+  expect(parse(readFileSync(homePath, 'utf8'))).toEqual([])
+  expect(ctx.agentDefaultModel.currentSelection()).toEqual({ provider: 'test', model: 'original' })
 }, 15_000)
 
 it('serializes concurrent writes and refuses stale revisions after external changes', async () => {

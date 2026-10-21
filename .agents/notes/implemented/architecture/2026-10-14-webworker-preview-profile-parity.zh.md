@@ -31,7 +31,7 @@ Status: implemented
   - 用镜像里 app-boot 的 `loadProfile` 从模板初始化 `home/profiles/<profile>`，写空的根 `cordis.yml`，用 `readProfilePatches` 组合。
   - profileContext 按 `runProfile` 填写：name、dir、patchPath、installAnchor、startedBundles、cwd、home，overlay 列表为空，因此 Worker 与不带 `--patch` 的启动器一样只调用一次 `readProfilePatches`。
   - 提供 launchEnvironment 快照，挂上不带 resolution 的 `PluginPackages`。
-- **保留的平台差异**：jsonl `compression: none`（经镜像的 home patch 提供；ConfigEditor 会拒绝修改这一行的配置，与拒绝任何被 home patch 覆盖的行一致）、模块加载器（Worker 自己的 CommonJS 加载器，经 Node internal 模块接口提供，见下节）、日志输出、启动参数、appReady 时机、没有 pnpm、没有进程级代理和信号处理。
+- **保留的平台差异**：jsonl `compression: none`（经镜像的 home patch 提供；ConfigEditor 对该行的编辑写入镜像 home patch，与任何 home patch 定义的条目一致）、模块加载器（Worker 自己的 CommonJS 加载器，经 Node internal 模块接口提供，见下节）、日志输出、启动参数、appReady 时机、没有 pnpm、没有进程级代理和信号处理。
 
 Worker 只用 app-boot 现有导出；app-boot 没有 Preview 专用的 override 或注入点。
 

@@ -1,0 +1,22 @@
+# Bilingual-pair consistency record for 2026-10-21-shared-home-layer-write-target.md (docs/i18n/README.md): per heading
+# section, a hash of its English and Chinese blocks outside code blocks and generated regions.
+# After editing either side, bring the other along and re-record with:
+#   pnpm run verify-translation-pairing --write .agents/notes/implemented/architecture/2026-10-21-shared-home-layer-write-target.md
+/agent-note-edit-shared-home-layer-entries-in-the-home-patch:
+  en: da7fa2931ff64577
+  zh: 5814866d4ca0e059
+/agent-note-edit-shared-home-layer-entries-in-the-home-patch/problem:
+  en: 8814d13533d2496e
+  zh: a386ffc673b5387f
+/agent-note-edit-shared-home-layer-entries-in-the-home-patch/decision:
+  en: 1406a52248df8839
+  zh: ae4b0a3b9d8eb141
+/agent-note-edit-shared-home-layer-entries-in-the-home-patch/alternatives-considered:
+  en: 2626bc177f0a7f0d
+  zh: 406cc22e7184189a
+/agent-note-edit-shared-home-layer-entries-in-the-home-patch/consequences:
+  en: 766ca88c8a3770da
+  zh: b904a55e34a6a662
+/agent-note-edit-shared-home-layer-entries-in-the-home-patch/testing:
+  en: 937c313cbf2c1c06
+  zh: 71e813a1e762ba25

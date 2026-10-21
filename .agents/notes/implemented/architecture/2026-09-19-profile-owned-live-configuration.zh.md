@@ -12,7 +12,7 @@ Status: implemented
 
 插件在 Cordis Config 中声明全部可配置值。无需重新挂载即可变化的字段使用 `.volatile()`；消费者在操作时读取其引用。Settings 只枚举这些字段并生成表单，不向业务提供配置。profile 编辑器写入 `cordis.patch.yml`，并通过普通 Loader 协调路径应用变化。
 
-表单写入当前 profile。home patch 和命令行 overlay 仍是优先级更高的部署输入；如果它们会遮蔽某次修改，编辑器会在持久化前拒绝写入。两个插件实例通过各自不同的 profile entry id 寻址。嵌套 Include 保留独立所有权，不能通过该 profile 表单写入。
+表单写入当前 profile；home patch 定义的条目例外，按 [共享 home 层写入目标](2026-10-21-shared-home-layer-write-target.zh.md) 在该共享文档中编辑。命令行 overlay 仍是优先级更高的部署输入；如果它会遮蔽某次修改，编辑器会在持久化前拒绝写入。两个插件实例通过各自不同的 profile entry id 寻址。嵌套 Include 保留独立所有权，不能通过该 profile 表单写入。
 
 Cordis config patch 替换完整 entry config。编辑会保留普通字段、未编辑的秘密值和原始配置表达式。字段重置恢复当前继承值；整个 entry 重置后会移除其 config override，从而继承后续 bundle 变化。其他编辑会把该 entry 的完整 config 存入 profile 行：写入时组合出的普通字段加上全部 volatile 字段。此后 bundle 对这些字段的修改在该 entry 的 config override 被移除之前不会到达该 profile。在已发布的 bundle 中，修改默认权限预设会钉住 `permission.presets`，选择预设会钉住 `agent-presets`，编辑并行度会钉住 `agent-loop.agents`，编辑网页搜索会钉住 `web-search-deepseek.apiKeyEnv`；客户端会把这类行的每个 volatile 字段都标为已覆盖，而不只是被编辑的那个。要把写入收窄到被编辑字段需要 patch `config` 的合并语义，Include 不提供。
 

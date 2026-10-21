@@ -24,29 +24,29 @@ describe('config file open', () => {
     await rm(home, { recursive: true, force: true })
   })
 
-  it('opens the settings file with the system default', async () => {
-    await writeFile(join(home, 'settings.yaml'), 'models: {}\n')
-    expect(await configFile.open()).toEqual({ ok: true, path: join(home, 'settings.yaml'), opened: 'file' })
-    expect(openUrl).toHaveBeenCalledWith(join(home, 'settings.yaml'))
+  it('opens the shared config file with the system default', async () => {
+    await writeFile(join(home, 'cordis.patch.yml'), '- id: shared\n')
+    expect(await configFile.open()).toEqual({ ok: true, path: join(home, 'cordis.patch.yml'), opened: 'file' })
+    expect(openUrl).toHaveBeenCalledWith(join(home, 'cordis.patch.yml'))
     expect(openDirectory).not.toHaveBeenCalled()
   })
 
-  it('opens the containing directory when settings do not exist', async () => {
+  it('opens the containing directory when the shared config does not exist', async () => {
     expect(await configFile.open()).toEqual({ ok: true, path: home, opened: 'directory' })
     expect(openDirectory).toHaveBeenCalledWith(home)
     expect(openUrl).not.toHaveBeenCalled()
   })
 
-  it('treats a directory named settings.yaml as no settings file and opens the containing directory', async () => {
-    await mkdir(join(home, 'settings.yaml'))
+  it('treats a directory named cordis.patch.yml as no config file and opens the containing directory', async () => {
+    await mkdir(join(home, 'cordis.patch.yml'))
     expect(await configFile.open()).toEqual({ ok: true, path: home, opened: 'directory' })
     expect(openDirectory).toHaveBeenCalledWith(home)
   })
 
   it('reports launcher failure instead of silently opening a different app', async () => {
-    await writeFile(join(home, 'settings.yaml'), 'models: {}\n')
+    await writeFile(join(home, 'cordis.patch.yml'), '- id: shared\n')
     vi.mocked(openUrl).mockRejectedValueOnce(new Error('No default application'))
-    expect(await configFile.open()).toEqual({ ok: false, path: join(home, 'settings.yaml'), error: 'No default application' })
+    expect(await configFile.open()).toEqual({ ok: false, path: join(home, 'cordis.patch.yml'), error: 'No default application' })
     expect(openDirectory).not.toHaveBeenCalled()
   })
 })

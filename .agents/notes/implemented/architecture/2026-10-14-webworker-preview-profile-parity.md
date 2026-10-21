@@ -31,7 +31,7 @@ The served launch path (apps/cli, app-boot) carries no Preview-specific code; th
   - The image's app-boot `loadProfile` initializes `home/profiles/<profile>` from the template, the Worker writes an empty root `cordis.yml`, and `readProfilePatches` composes the layers.
   - profileContext is filled the way `runProfile` fills it: name, dir, patchPath, installAnchor, startedBundles, cwd, home, and an empty overlay list, so the Worker calls `readProfilePatches` once, as the launcher does without `--patch`.
   - The Worker provides a launchEnvironment snapshot and mounts `PluginPackages` without a resolution.
-- **Retained platform differences**: jsonl `compression: none` through the image's home patch (ConfigEditor rejects edits to that row's config, as it rejects any row a home patch overrides), the module loader (the Worker's own CommonJS loader, provided through the Node internal-module interfaces in the next section), log output, command-line arguments, appReady timing, no pnpm, and no process-level proxy or signal handling.
+- **Retained platform differences**: jsonl `compression: none` through the image's home patch (ConfigEditor edits that row in the image's home patch, like any row a home patch defines), the module loader (the Worker's own CommonJS loader, provided through the Node internal-module interfaces in the next section), log output, command-line arguments, appReady timing, no pnpm, and no process-level proxy or signal handling.
 
 The Worker uses existing app-boot exports; app-boot has no Preview override or injection point.
 
