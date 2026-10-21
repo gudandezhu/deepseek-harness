@@ -38,7 +38,7 @@ Run from the repository root:
 
 For portable desktop/plugin development, use separate terminals for the plugin watcher and `pnpm tauri dev`.
 
-From the deepseek-harness repository root, `just dev-desktop` generates `desktop-tauri/.local-kernel`, points `DSH_CLI_PATH` at this repository's `apps/cli`, and starts `tauri dev`. The shell therefore runs the fork's `dsh web` (including its session workers) instead of the bundled core. Rust hot reload and Vite HMR are unchanged.
+From the deepseek-harness repository root, `just dev-desktop` first rebuilds the kernel and desktop plugin artifacts when sources changed since the last build (judged from HEAD and the worktree state of build inputs, skipping the rebuild when nothing changed), then generates `desktop-tauri/.local-kernel`, points `DSH_CLI_PATH` at this repository's `apps/cli`, and starts `tauri dev`. The shell therefore runs the fork's `dsh web` (including its session workers) instead of the bundled core. After a source edit, rerun that one command; Rust hot reload and Vite HMR are unchanged.
 
 The same command sets `DSH_HOME` to `${DSH_HOME:-$HOME/.dsh}`, so the desktop and the CLI share one harness home. Model providers and the default model live in `$DSH_HOME/cordis.patch.yml`; the desktop Models page reads and writes that same file, so a change reaches the CLI immediately. API keys and relay endpoints live in `$DSH_HOME/.env`, which the harness loads as its home layer regardless of the working directory.
 

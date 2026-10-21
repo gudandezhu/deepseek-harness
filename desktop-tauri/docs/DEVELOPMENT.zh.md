@@ -38,7 +38,7 @@ macOS 运行时最低版本为 12+，Web 界面需要 Safari 17.4+ 能力。Linu
 
 跨平台开发建议分别在两个终端运行插件 watcher 与 `pnpm tauri dev`。
 
-在 deepseek-harness 仓库根目录执行 `just dev-desktop`：它生成本地内核入口 `desktop-tauri/.local-kernel`，把 `DSH_CLI_PATH` 指向本仓库的 `apps/cli`，再启动 `tauri dev`。壳层因此运行本仓库的 `dsh web`（含 session worker），而不是随包内核。Rust 热重载与 Vite HMR 不变。
+在 deepseek-harness 仓库根目录执行 `just dev-desktop`：它先按源码变化重建内核与桌面插件产物（以 HEAD 和构建输入的工作区状态判定，无变化则跳过），再生成内核入口 `desktop-tauri/.local-kernel`，把 `DSH_CLI_PATH` 指向本仓库的 `apps/cli`，最后启动 `tauri dev`。壳层因此运行本仓库的 `dsh web`（含 session worker），而不是随包内核。改完代码只需重跑这一条命令；Rust 热重载与 Vite HMR 不变。
 
 同一条命令把 `DSH_HOME` 设为 `${DSH_HOME:-$HOME/.dsh}`，桌面端与 CLI 因此共用一个 harness home。模型 provider 和默认模型放在 `$DSH_HOME/cordis.patch.yml`；桌面端「模型设置」读写同一份文件，改完桌面和 CLI 立即一致。API key 和 relay 地址放在 `$DSH_HOME/.env`。harness 把家目录 `.env` 作为独立一层加载，与启动目录无关。
 

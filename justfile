@@ -119,8 +119,13 @@ local-kernel:
     @printf '#!/bin/sh\nexec node "%s/apps/cli/lib/bin.js" "$@"\n' "{{justfile_directory()}}" > "{{kernel}}/bin/dsh"
     @chmod +x "{{kernel}}/bin/dsh"
 
+# 按源码变化重建内核与桌面插件；无变化时跳过。
+ensure-desktop-build:
+    {{pnpm}} run ensure:desktop-build
+
 # 启动 Tauri 桌面：Vite + Tauri dev 窗口，内核使用本仓库的 dsh，并共用 CLI 的 $DSH_HOME。
-dev-desktop: local-kernel
+# 先按源码变化重建内核与桌面插件，因此改完代码只需重跑这一条命令。
+dev-desktop: ensure-desktop-build local-kernel
     cd desktop-tauri && DSH_HOME="${DSH_HOME:-$HOME/.dsh}" DSH_CLI_PATH="{{kernel}}/bin/dsh" ./node_modules/.bin/tauri dev
 
 # 构建未签名的 debug 桌面应用。
