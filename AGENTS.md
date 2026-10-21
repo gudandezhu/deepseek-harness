@@ -42,5 +42,6 @@ DeepSeek Harness 是全插件 Cordis agent harness。本文件只保留文档地
 8. 测试描述行为；模型或产品用户可见改动更新无密钥录制快照；agent-loop、session 生命周期或 `SessionEventMap` 改动在同一 PR 更新 TypeScript 和 Python SDK 的期望输出。
 9. 不默认跑全量测试，不重复已通过的检查；完成前跑 `just verify`。命令因沙箱失败时，用最小范围提权重试原命令，不绕过测试失败或产品沙箱。
 10. 代码改动同步更新受影响的 README 和 JSDoc；文档规范遵循 [docs/AGENTS.md](docs/AGENTS.md)。不提交凭据；vendor 更新后跑 `just test` 和 `just build`。
+11. 任务完成必须 commit，不得把改动留在工作区；提交前跑通相关测试，提交信息写清改了什么。
 
 可机械检查的规则由 `just check-static`、`just test-docs`、`just verify` 执行，本文件不重复。
