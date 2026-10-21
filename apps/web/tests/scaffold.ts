@@ -195,10 +195,12 @@ export function recordedSessionFixturePath(path: string, version: number): strin
   return join(dirname(path), sessionFixtureName(fixture.index, version))
 }
 
-/** The shipped composition under test: the dsh-base and dsh-web-app bundle patches over the empty profile root. */
+/** The shipped composition under test: the dsh-base, dsh-agent-plane, and dsh-web-app bundle patches over the empty profile root. */
 const BASE_PATCH_PATH = join(REPO_ROOT, 'packages/bundle/base/cordis.patch.yml')
+const AGENT_PLANE_DIR = join(REPO_ROOT, 'packages/bundle/agent-plane')
+const AGENT_PLANE_PATCH = (JSON.parse(readFileSync(join(AGENT_PLANE_DIR, 'package.json'), 'utf8')) as { dsh: { bundle: { patch: string | string[] } } }).dsh.bundle
 const WEB_BUNDLE_DIR = join(REPO_ROOT, 'packages/bundle/web-app')
-const WEB_BUNDLE_PATCH = (JSON.parse(readFileSync(join(WEB_BUNDLE_DIR, 'package.json'), 'utf8')) as { dsh: { bundle: { patch: string[] } } }).dsh.bundle
+const WEB_BUNDLE_PATCH = (JSON.parse(readFileSync(join(WEB_BUNDLE_DIR, 'package.json'), 'utf8')) as { dsh: { bundle: { patch: string | string[] } } }).dsh.bundle
 /** The installation anchor whose dependency surface the runtime resolution mirrors. */
 const INSTALL_ANCHOR = join(REPO_ROOT, 'apps/cli/package.json')
 
@@ -575,12 +577,14 @@ export async function launchWebScaffold(options: LaunchOptions = {}): Promise<We
   // patch id that stops matching a row fails the boot sweep loudly instead of
   // drifting).
   const basePatches = loadOverlayPatches('web e2e scaffold', BASE_PATCH_PATH)
+  const planePatches = bundlePatchPaths(AGENT_PLANE_DIR, AGENT_PLANE_PATCH)
+    .flatMap(file => loadOverlayPatches('web e2e scaffold', file))
   const surfacePatches = bundlePatchPaths(WEB_BUNDLE_DIR, WEB_BUNDLE_PATCH).flatMap(file => loadOverlayPatches('web e2e scaffold', file))
   const extraOverlayPatches = options.extraOverlayPath === undefined
     ? []
     : (typeof options.extraOverlayPath === 'string' ? [options.extraOverlayPath] : options.extraOverlayPath)
       .flatMap(path => loadOverlayPatches('web e2e scaffold', path))
-  const composedRows = composeEntries([basePatches, surfacePatches, extraOverlayPatches])
+  const composedRows = composeEntries([basePatches, planePatches, surfacePatches, extraOverlayPatches])
   const webRuntimeConfig = composedRows.find(row => row.id === 'web-runtime')?.config as {
     surfaceContext?: boolean
   } | undefined
@@ -780,7 +784,7 @@ export async function launchWebScaffold(options: LaunchOptions = {}): Promise<We
       // A real profile: the shipped web bundles plus each fixture package,
       // installed the way `dsh plugin add` leaves them.
       const dependencies: Record<string, string> = {}
-      const bundles = ['@deepseek-ai/dsh-base', '@deepseek-ai/dsh-web-app', ...options.profile?.bundles ?? []]
+      const bundles = ['@deepseek-ai/dsh-base', '@deepseek-ai/dsh-agent-plane', '@deepseek-ai/dsh-web-app', ...options.profile?.bundles ?? []]
       for (const entry of options.profile?.packages ?? []) {
         const manifest = JSON.parse(await readFile(join(entry.dir, 'package.json'), 'utf8')) as { name: string }
         dependencies[manifest.name] = `file:${entry.dir}`

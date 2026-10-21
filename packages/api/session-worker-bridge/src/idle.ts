@@ -3,7 +3,8 @@
  *
  * The worker reports idle only when every ordinary Agent is idle, no assistant
  * stream is open, the Session log has been quiet for the configured window, no
- * background job is running or stopping, and no subagent child is progressing.
+ * background job is running or stopping, no subagent child is progressing, and
+ * no Session title call is in flight.
  * Passive streams (`session.follow`, `session.control`, `$events`) never
  * update the activity clock.
  *
@@ -13,6 +14,11 @@
 import type { Context } from '@deepseek-ai/cordis'
 import type { Agent, AssistantStreamFrame } from '@deepseek-ai/dsh-agent'
 import type { SessionId } from '@deepseek-ai/dsh-session'
+
+/** The title-service surface the idle check reads. */
+interface TitleActivity {
+  isBusy(): boolean
+}
 
 /** One observation of the worker's idle conditions. */
 export interface WorkerIdleSnapshot {
@@ -76,6 +82,12 @@ export class WorkerIdleTracker {
     }
     if (now - this.lastActivityAt < this.quietMs) {
       return { idle: false, reason: 'quiet-window' }
+    }
+    // Title generation is a background model call the Agent never sees; without
+    // this check a worker can be reclaimed mid-title.
+    const titles = this.ctx.get('sessionTitle') as TitleActivity | undefined
+    if (titles?.isBusy() === true) {
+      return { idle: false, reason: 'title-running' }
     }
     const jobs = this.ctx.get('jobs')
     if (jobs !== undefined && agents.some(agent =>

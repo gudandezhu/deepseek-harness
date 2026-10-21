@@ -1,0 +1,28 @@
+# Bilingual-pair consistency record for README.md (docs/i18n/README.md): per heading
+# section, a hash of its English and Chinese blocks outside code blocks and generated regions.
+# After editing either side, bring the other along and re-record with:
+#   pnpm run verify-translation-pairing --write packages/bundle/agent-plane/README.md
+/:
+  en: 3009db7024d27e1f
+  zh: 8cf0b20cba225cc3
+/deepseek-ai-dsh-agent-plane:
+  en: ea5a77ed4ef248eb
+  zh: 8a5fd739f16573cd
+/deepseek-ai-dsh-agent-plane/summary:
+  en: e2ea28d4471d9323
+  zh: 87af8199864aad98
+/deepseek-ai-dsh-agent-plane/table-of-contents:
+  en: e23dd9c7164b13e9
+  zh: dd11719e3add9dc4
+/deepseek-ai-dsh-agent-plane/model-experience:
+  en: 044bbef216bf7442
+  zh: 43b6748cba60348c
+/deepseek-ai-dsh-agent-plane/model-experience/kv-cache-effect:
+  en: 6d71e92fb15fa378
+  zh: 2c847e7337303339
+/deepseek-ai-dsh-agent-plane/known-limitations-and-deferred-work:
+  en: 7258c1c0d20e36a1
+  zh: f8044d7177b29cab
+/deepseek-ai-dsh-agent-plane/known-limitations-and-deferred-work/dev-note:
+  en: e67f633dc6fe7773
+  zh: e88aeb617ffb74ea

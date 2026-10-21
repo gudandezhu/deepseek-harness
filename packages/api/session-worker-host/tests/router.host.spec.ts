@@ -24,6 +24,8 @@ function setup(options: {
   /** A Workspace member the fork source already belongs to. */
   readonly member?: SessionId
   readonly attachFailure?: Error
+  /** The Host's current default Agent preset. */
+  readonly defaultPreset?: string
 } = {}) {
   const ctx = new Context()
   ctx.provide('remoteAccess', {
@@ -45,6 +47,9 @@ function setup(options: {
       ancestors: [],
     })),
   } as never)
+  if (options.defaultPreset !== undefined) {
+    ctx.provide('agentPresets', { defaultId: options.defaultPreset } as never)
+  }
   const call = vi.fn(async (..._args: unknown[]): Promise<ConnectionRpcResult<unknown>> => ({
     ok: true,
     value: options.reply ?? { accepted: true },
@@ -76,10 +81,10 @@ describe('Session worker host router', () => {
       .resolves.toEqual({ ok: true, value: { accepted: true } })
     expect(acquired).toHaveBeenCalledWith(sessionId)
     expect(attach).toHaveBeenCalledWith(sessionId, expect.anything())
-    const forwarded = call.mock.calls[0] as unknown as [string, unknown, { readonly signal: AbortSignal }]
+    const forwarded = call.mock.calls[0] ?? []
     expect(forwarded[0]).toBe('session/prompt')
     expect(forwarded[1]).toEqual({ request: { sessionId } })
-    expect(forwarded[2].signal).toBeInstanceOf(AbortSignal)
+    expect((forwarded[2] as { readonly signal?: unknown }).signal).toBeInstanceOf(AbortSignal)
   })
 
   it('leaves a cold cancel and a cold job kill to the host', async () => {
@@ -143,6 +148,20 @@ describe('Session worker host router', () => {
     })
   })
 
+  it('fills the Host default preset into an unnamed create and keeps an explicit one', async () => {
+    const { router, call } = setup({ defaultPreset: 'standard' })
+    await router.dispatch?.('session/create', payload({ request: { cwd: '/repo' } }), new AbortController().signal, owner)
+    await router.dispatch?.(
+      'session/create',
+      payload({ request: { cwd: '/repo', agentPreset: 'minimal' } }),
+      new AbortController().signal,
+      owner,
+    )
+    const requests = call.mock.calls.map(call => (call[1] as { request: Record<string, unknown> }).request)
+    expect(requests[0]?.['agentPreset']).toBe('standard')
+    expect(requests[1]?.['agentPreset']).toBe('minimal')
+  })
+
   it('denies a non-owner before spawning or forwarding', async () => {
     const { router, call, acquired } = setup({ decision: { kind: 'deny', reason: 'no-allow' } })
     const result = await router.dispatch?.('session/prompt', payload({ request: { sessionId } }), new AbortController().signal, owner)
@@ -155,10 +174,10 @@ describe('Session worker host router', () => {
     const { router, call, acquired } = setup()
     await router.dispatch?.('session/fork', payload({ request: { sessionId } }), new AbortController().signal, owner)
     expect(acquired).toHaveBeenCalledWith(sessionId)
-    const forwarded = call.mock.calls[0] as unknown as [string, unknown, { readonly signal: AbortSignal }]
+    const forwarded = call.mock.calls[0] ?? []
     expect(forwarded[0]).toBe('session/fork')
     expect(forwarded[1]).toEqual({ request: { sessionId } })
-    expect(forwarded[2].signal).toBeInstanceOf(AbortSignal)
+    expect((forwarded[2] as { readonly signal?: unknown }).signal).toBeInstanceOf(AbortSignal)
   })
 
   it('delivers a Schedule reminder to the worker that owns the Session', async () => {
@@ -167,10 +186,10 @@ describe('Session worker host router', () => {
     await expect(router.deliverReminder(sessionId, 'reminder text')).resolves.toEqual({ accepted: true })
     expect(acquired).toHaveBeenCalledWith(sessionId)
     expect(attach).toHaveBeenCalledWith(sessionId, expect.anything())
-    const forwarded = call.mock.calls[0] as unknown as [string, unknown, { readonly signal: AbortSignal }]
+    const forwarded = call.mock.calls[0] ?? []
     expect(forwarded[0]).toBe('session/deliverReminder')
     expect(forwarded[1]).toEqual({ request: { sessionId, text: 'reminder text' } })
-    expect(forwarded[2].signal).toBeInstanceOf(AbortSignal)
+    expect((forwarded[2] as { readonly signal?: unknown }).signal).toBeInstanceOf(AbortSignal)
   })
 
   it('surfaces a worker delivery failure to the Schedule caller', async () => {

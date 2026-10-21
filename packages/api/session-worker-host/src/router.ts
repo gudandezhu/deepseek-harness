@@ -14,6 +14,7 @@ import { randomUUID } from 'node:crypto'
 import type { Context } from '@deepseek-ai/cordis'
 import type { RemoteAccessAction } from '@deepseek-ai/dsh-api-remote-access'
 import type { ConnectionRpcResult } from '@deepseek-ai/dsh-client-connection'
+import type {} from '@deepseek-ai/dsh-agent-preset-registry'
 import type { SessionId } from '@deepseek-ai/dsh-session'
 import { WorkspaceId, type Workspace, type WorkspaceRegistry } from '@deepseek-ai/dsh-workspace'
 import type { PeerScope } from '@deepseek-ai/dsh-typert-protocol'
@@ -135,7 +136,29 @@ export class SessionWorkerRouter implements TypertEndpointRouter, SessionReminde
     // A cold cancel or job control call has no worker-owned state; the host
     // path owns the canonical "not attached" and "unknown job" failures.
     if (live === undefined && !route.spawn) return undefined
-    return this.forward(endpoint, route, target, live, signal)
+    const forwarded: RouteTarget = {
+      sessionId: target.sessionId,
+      args: this.withDefaultPreset(endpoint, target.args),
+    }
+    return this.forward(endpoint, route, forwarded, live, signal)
+  }
+
+  /**
+   * Fill the Host's current default preset into a create that names none, so a
+   * worker composes the preset the Settings page shows.
+   * @param endpoint - routed endpoint.
+   * @param args - forwarded arguments.
+   * @returns the arguments to forward.
+   */
+  private withDefaultPreset(
+    endpoint: string,
+    args: Readonly<Record<string, unknown>>,
+  ): Readonly<Record<string, unknown>> {
+    if (endpoint !== 'session/create') return args
+    const request = requestOf(args)
+    if (request === undefined || request['agentPreset'] !== undefined) return args
+    const defaultId = this.ctx.get('agentPresets')?.defaultId
+    return defaultId === undefined ? args : { ...args, request: { ...request, agentPreset: defaultId } }
   }
 
   /**

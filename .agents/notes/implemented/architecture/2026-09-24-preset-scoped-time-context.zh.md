@@ -6,11 +6,11 @@ Status: implemented
 
 ## Problem
 
-`packages/bundle/web-app/cordis.patch.yml` 中的一行会服务于 profile 中的每个 preset，因此把 `time-context` 行放在那里，会为每个 preset（包括 `minimal`）的每个符合条件的步骤追加一条 user 角色消息。`minimal` preset 只组合 persona 与 persistent shell：它不声明提醒工具，其中也没有任何东西会把该读数变成定时目标，因此那条消息在它的组合中没有消费者。
+`packages/bundle/agent-plane/cordis.patch.yml` 中的一行会服务于 profile 中的每个 preset，因此把 `time-context` 行放在那里，会为每个 preset（包括 `minimal`）的每个符合条件的步骤追加一条 user 角色消息。`minimal` preset 只组合 persona 与 persistent shell：它不声明提醒工具，其中也没有任何东西会把该读数变成定时目标，因此那条消息在它的组合中没有消费者。
 
 ## Decision
 
-`packages/bundle/web-app/presets/standard.patch.yml`、`ptc.patch.yml` 与 `cordis.patch.yml` 各自在其 Agent 上下文行中声明 `time-context`；`minimal.patch.yml` 不声明。`packages/bundle/web-app/cordis.patch.yml` 不含 `time-context` 行；它插入 `schedule` 与 `ui-schedule`。`packages/bundle/web-app/package.json` 继续声明 `@deepseek-ai/dsh-time-context`，这是 `verify-cordis-config` 对 `presets/cordis.patch.yml` 贡献的裸包名的要求。
+`packages/bundle/agent-plane/presets/standard.patch.yml`、`ptc.patch.yml` 与 `cordis.patch.yml` 各自在其 Agent 上下文行中声明 `time-context`；`minimal.patch.yml` 不声明。`packages/bundle/agent-plane/cordis.patch.yml` 不含 `time-context` 行；它插入 `schedule` 与 `ui-schedule`。`packages/bundle/agent-plane/package.json` 继续声明 `@deepseek-ai/dsh-time-context`，这是 `verify-cordis-config` 对 `presets/cordis.patch.yml` 贡献的裸包名的要求。
 
 这里确立的边界是：携带时间的注入归属于消费它的 preset。由 preset 决定其 Agent 是否收到时钟读数，因此该读数与消费它的提醒工具同行；`schedule` 宿主服务行与 `ui-schedule` 客户端行是与 preset 无关的界面，因此由 [Web bundle](../../../../packages/bundle/web-app/README.zh.md)为整个部署插入它们。该组合负责 `web` profile 挂载哪些宿主行与客户端界面；本记录负责该读数的 preset 归属。
 

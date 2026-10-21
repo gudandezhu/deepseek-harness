@@ -6,11 +6,11 @@ English | [中文](2026-09-24-preset-scoped-time-context.zh.md)
 
 ## Problem
 
-A row in `packages/bundle/web-app/cordis.patch.yml` serves every preset in the profile, so a `time-context` row placed there would append one user-role message per eligible step to every preset, `minimal` included. The `minimal` preset composes only a persona and a persistent shell: it declares no reminder tool, and nothing in it turns the reading into a scheduled target, so that message would have no consumer in its composition.
+A row in `packages/bundle/agent-plane/cordis.patch.yml` serves every preset in the profile, so a `time-context` row placed there would append one user-role message per eligible step to every preset, `minimal` included. The `minimal` preset composes only a persona and a persistent shell: it declares no reminder tool, and nothing in it turns the reading into a scheduled target, so that message would have no consumer in its composition.
 
 ## Decision
 
-`packages/bundle/web-app/presets/standard.patch.yml`, `ptc.patch.yml`, and `cordis.patch.yml` each declare `time-context` among their Agent-context rows; `minimal.patch.yml` does not. `packages/bundle/web-app/cordis.patch.yml` carries no `time-context` row; it inserts `schedule` and `ui-schedule`. `packages/bundle/web-app/package.json` keeps declaring `@deepseek-ai/dsh-time-context`, which `verify-cordis-config` requires for the bare plugin name `presets/cordis.patch.yml` contributes.
+`packages/bundle/agent-plane/presets/standard.patch.yml`, `ptc.patch.yml`, and `cordis.patch.yml` each declare `time-context` among their Agent-context rows; `minimal.patch.yml` does not. `packages/bundle/agent-plane/cordis.patch.yml` carries no `time-context` row; it inserts `schedule` and `ui-schedule`. `packages/bundle/agent-plane/package.json` keeps declaring `@deepseek-ai/dsh-time-context`, which `verify-cordis-config` requires for the bare plugin name `presets/cordis.patch.yml` contributes.
 
 The boundary this states is that an injection carrying time belongs to the preset that consumes it. A preset decides whether its Agents receive a clock reading, so the reading travels with the reminder tools that consume it; the `schedule` Host service row and the `ui-schedule` client row are preset-independent surfaces, so the [Web bundle](../../../../packages/bundle/web-app/README.md) inserts them for the whole deployment. That composition owns which Host rows and client surfaces the `web` profile mounts; this record owns the reading's preset placement.
 

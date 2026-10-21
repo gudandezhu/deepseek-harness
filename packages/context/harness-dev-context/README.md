@@ -82,7 +82,7 @@ Read these pages when the package-level contract is not enough. They move from t
 
 #### What the model sees
 
-Two system-prompt paragraphs at first-party orders 10000 and 10100, after reusable instructions, and two runtime-context lines at context orders 200 and 210. A Session admitted under an earlier release sees its own earlier paragraphs instead of the two below.
+Two system-prompt paragraphs at first-party orders 10000 and 10100, after reusable instructions, a static file-presentation paragraph at the deliverables order, and two runtime-context lines at context orders 200 and 210. A Session admitted under an earlier release sees its own earlier paragraphs instead of the two value-free ones below.
 
 ##### System-prompt paragraphs
 
@@ -102,11 +102,11 @@ Current DeepSeek Harness Web GUI URL: "<advertised URL>".
 
 #### Token effect
 
-Two prompt paragraphs per Session and two lines in each runtime-context snapshot. A changed checkout or URL adds one snapshot.
+Three prompt paragraphs per Session and two lines in each runtime-context snapshot. A changed checkout or URL adds one snapshot.
 
 #### KV Cache effect
 
-The system prompt is identical across checkouts, ports, and installations, so a process started elsewhere leaves the cached prefix intact; a changed value appends one runtime-context snapshot after it.
+The system prompt is identical across checkouts, ports, and installations, so a process started elsewhere leaves the cached prefix intact; the file-presentation paragraph is static while the package is mounted; a changed value appends one runtime-context snapshot after it.
 
 ## Known Limitations and Deferred Work
 
@@ -114,7 +114,7 @@ The system prompt is identical across checkouts, ports, and installations, so a 
 
 These limits describe what the stability guarantee covers. They are current package constraints.
 
-- **Two paragraphs only** — other system-prompt text that changes between releases still rewrites the first system message on routes without in-history prompt updates.
+- **Two value-bearing paragraphs only** — other system-prompt text that changes between releases still rewrites the first system message on routes without in-history prompt updates.
 - **Earlier values stay** — an earlier-format Session keeps its old checkout path and URL in the system prompt for its whole lifetime; only the later runtime-context lines are current.
 - **Mixed releases** — a release without this package rewrites the first system message of a Session started with it, so every checkout that serves a shared `DSH_HOME` needs this package before they alternate.
 - **Optional values** — the two runtime-context lines are optional, so a custom persona that sets `includeRuntimeContext: false` without `complete: true` keeps the sections that point at values its requests never carry. The shipped `minimal` persona sets both.

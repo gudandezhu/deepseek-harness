@@ -11,18 +11,27 @@
  * @module @deepseek-ai/dsh-session-worker-protocol
  */
 
-import type { ClientRequest, ConnectionRpcFailure } from '@deepseek-ai/dsh-client-connection'
+import type { ClientRequest, ConnectionRpcFailure, ConnectionRpcResult } from '@deepseek-ai/dsh-client-connection'
 
 export { AsyncQueue, AsyncQueueOverflowError } from './async-queue.ts'
 
 /** Protocol revision exchanged by initialize and ready. */
-export const SESSION_WORKER_PROTOCOL_VERSION = 1
+export const SESSION_WORKER_PROTOCOL_VERSION = 2
 
 /** Default maximum size of one complete JSON line, in UTF-8 bytes. */
 export const DEFAULT_MAX_FRAME_BYTES = 64 * 1024 * 1024
 
 /** Logical channels multiplexed by the byte pipe. */
 export type SessionWorkerChannel = 'rpc' | 'mux' | 'notify'
+
+/** Host service name a worker uses for Schedule management calls. */
+export const SCHEDULE_HOST_SERVICE = 'schedule'
+
+/** Failure code the Host uses for a rejected Schedule input. */
+export const SCHEDULE_INPUT_ERROR_CODE = 'schedule/input'
+
+/** Host service name a worker uses for Cordis inspection calls. */
+export const CORDIS_INSPECT_HOST_SERVICE = 'cordisInspect'
 
 /** Stable protocol failure raised while framing or validating a frame. */
 export class SessionWorkerProtocolError extends Error {
@@ -118,6 +127,27 @@ export interface WorkerShutdownResultFrame {
   readonly flushedSessions: number
 }
 
+/**
+ * Worker asks the Host to run one host-owned service method. The worker holds
+ * no service instance; the Host answers with {@link WorkerHostCallResultFrame}.
+ */
+export interface WorkerHostCallFrame {
+  readonly channel: 'rpc'
+  readonly type: 'host-call'
+  readonly requestId: string
+  readonly service: string
+  readonly method: string
+  readonly payload: unknown
+}
+
+/** Host returns one reverse-call outcome in the unary Connection shape. */
+export interface WorkerHostCallResultFrame {
+  readonly channel: 'rpc'
+  readonly type: 'host-call-result'
+  readonly requestId: string
+  readonly result: ConnectionRpcResult<unknown>
+}
+
 /** Host opens one logical Gateway stream on this worker. */
 export interface WorkerMuxOpenFrame {
   readonly channel: 'mux'
@@ -189,6 +219,7 @@ export type HostToWorkerFrame =
   | WorkerInitializeFrame
   | WorkerUnaryRequestFrame
   | WorkerShutdownFrame
+  | WorkerHostCallResultFrame
   | WorkerMuxOpenFrame
   | WorkerMuxItemFrame
   | WorkerMuxEndFrame
@@ -201,6 +232,7 @@ export type WorkerToHostFrame =
   | WorkerUnaryResponseFrame
   | WorkerRpcErrorFrame
   | WorkerShutdownResultFrame
+  | WorkerHostCallFrame
   | WorkerMuxItemDownFrame
   | WorkerMuxEndDownFrame
   | WorkerMuxErrorFrame
@@ -258,7 +290,7 @@ export function encodeFrame(frame: SessionWorkerFrame): string {
 export function parseFrameLine(line: string): SessionWorkerFrame {
   let value: unknown
   try {
-    value = JSON.parse(line) as unknown
+    value = JSON.parse(line)
   } catch (error) {
     throw new SessionWorkerProtocolError('frame is not JSON', { cause: error })
   }
@@ -288,6 +320,7 @@ export function asHostToWorkerFrame(frame: SessionWorkerFrame): HostToWorkerFram
         case 'initialize':
         case 'request':
         case 'shutdown':
+        case 'host-call-result':
           return frame
         default:
           break
@@ -327,6 +360,7 @@ export function asWorkerToHostFrame(frame: SessionWorkerFrame): WorkerToHostFram
         case 'response':
         case 'error':
         case 'shutdown-result':
+        case 'host-call':
           return frame
         default:
           break
@@ -504,6 +538,22 @@ function parseRpcFrame(record: Record<string, unknown>): SessionWorkerFrame {
         requestId: readString(record, 'requestId'),
         flushedSessions: readInteger(record, 'flushedSessions'),
       }
+    case 'host-call':
+      return {
+        channel: 'rpc',
+        type: 'host-call',
+        requestId: readString(record, 'requestId'),
+        service: readString(record, 'service'),
+        method: readString(record, 'method'),
+        payload: record['payload'],
+      }
+    case 'host-call-result':
+      return {
+        channel: 'rpc',
+        type: 'host-call-result',
+        requestId: readString(record, 'requestId'),
+        result: readRpcResult(record['result']),
+      }
     default:
       throw new SessionWorkerProtocolError(`unknown rpc frame type ${JSON.stringify(record['type'])}`)
   }
@@ -565,6 +615,13 @@ function parseNotifyFrame(record: Record<string, unknown>): SessionWorkerFrame {
     reason: readString(record, 'reason'),
     sessions: readStringArray(record, 'sessions'),
   }
+}
+
+function readRpcResult(value: unknown): ConnectionRpcResult<unknown> {
+  const record = asRecord(value, 'result')
+  if (record['ok'] === true) return { ok: true, value: record['value'] }
+  if (record['ok'] === false) return { ok: false, error: readFailure(record['error']) }
+  throw new SessionWorkerProtocolError('result must carry an ok discriminant')
 }
 
 function readFailure(value: unknown): ConnectionRpcFailure {

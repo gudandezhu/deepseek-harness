@@ -10,10 +10,13 @@
  * @module @deepseek-ai/dsh-session-worker-bridge
  */
 
+import { randomUUID } from 'node:crypto'
 import type { Duplex } from 'node:stream'
 import type { Context } from '@deepseek-ai/cordis'
 import z from '@deepseek-ai/schemastery'
-import type { ConnectionFetchHandler, HostConnectionHandle, ClientRequest } from '@deepseek-ai/dsh-client-connection'
+import type {
+  ConnectionFetchHandler, ConnectionRpcResult, HostConnectionHandle, ClientRequest,
+} from '@deepseek-ai/dsh-client-connection'
 import type { TypertGateway } from '@deepseek-ai/dsh-api-gateway'
 import type {} from '@deepseek-ai/dsh-session-persistence'
 import type {} from '@deepseek-ai/dsh-jobs'
@@ -79,6 +82,33 @@ export const name = 'session-worker-bridge'
 /** Services that must exist before the bridge can dispatch forwarded calls. */
 export const inject = ['agents', 'connection', 'sessionController', 'sessions', 'typertGateway']
 
+/**
+ * Host-owned service methods a worker plugin may call back into. The bridge
+ * resolves the call over the inherited control channel.
+ */
+export interface SessionWorkerHostCalls {
+  /**
+   * @param service - host service name, for example `schedule`.
+   * @param method - service method name.
+   * @param payload - method payload.
+   * @param signal - optional cancellation; aborting stops awaiting the answer.
+   * @returns the Host's unary result envelope.
+   */
+  call(
+    service: string,
+    method: string,
+    payload: unknown,
+    signal?: AbortSignal,
+  ): Promise<ConnectionRpcResult<unknown>>
+}
+
+declare module '@deepseek-ai/cordis' {
+  interface Context {
+    /** Callback face for host-owned services, mounted only in a worker. */
+    sessionWorkerHostCalls: SessionWorkerHostCalls
+  }
+}
+
 interface ActiveMuxStream {
   readonly abort: AbortController
   readonly uplink: AsyncQueue<unknown>
@@ -91,6 +121,9 @@ interface ActiveMuxStream {
  */
 export function apply(ctx: Context, config: Config = {}): void {
   const bridge = new SessionWorkerBridge(ctx, resolveConfig(config))
+  ctx.provide('sessionWorkerHostCalls', {
+    call: (service, method, payload, signal) => bridge.callHost(service, method, payload, signal),
+  })
   ctx.effect(() => () => { bridge.dispose() }, 'session-worker-bridge: control channel')
 }
 
@@ -112,6 +145,7 @@ class SessionWorkerBridge {
   private readonly handler: ConnectionFetchHandler
   private readonly idle: WorkerIdleTracker
   private readonly muxStreams = new Map<string, ActiveMuxStream>()
+  private readonly hostCalls = new Map<string, PromiseWithResolvers<ConnectionRpcResult<unknown>>>()
   private readonly disposers: (() => void)[] = []
   private idleTimer: NodeJS.Timeout | undefined
   private lastIdle: boolean | undefined
@@ -163,6 +197,10 @@ class SessionWorkerBridge {
       stream.uplink.fail(new Error('session-worker: bridge disposed'))
     }
     this.muxStreams.clear()
+    for (const pending of this.hostCalls.values()) {
+      pending.resolve(hostCallFailure('session-worker/unavailable', 'worker bridge disposed'))
+    }
+    this.hostCalls.clear()
     this.channel.removeAllListeners()
     this.channel.destroy()
   }
@@ -205,6 +243,13 @@ class SessionWorkerBridge {
           case 'shutdown':
             this.beginShutdown(frame.requestId)
             return
+          case 'host-call-result': {
+            const pending = this.hostCalls.get(frame.requestId)
+            if (pending === undefined) return
+            this.hostCalls.delete(frame.requestId)
+            pending.resolve(frame.result)
+            return
+          }
           /* v8 ignore next 2 -- the protocol parser admits only these rpc types. */
           default:
             this.unexpected(frame)
@@ -303,6 +348,43 @@ class SessionWorkerBridge {
     }
   }
 
+  /**
+   * Ask the Host to run one host-owned service method.
+   *
+   * shortcut: a cancellation stops only the local wait; the Host finishes the
+   * operation, which is acceptable for the short management calls proxied here.
+   * Add a cancel frame if a long host operation is proxied later.
+   * @param service - host service name.
+   * @param method - method name.
+   * @param payload - method payload.
+   * @param signal - optional cancellation of the local wait.
+   * @returns the Host's unary result envelope.
+   */
+  callHost(
+    service: string,
+    method: string,
+    payload: unknown,
+    signal?: AbortSignal,
+  ): Promise<ConnectionRpcResult<unknown>> {
+    if (this.draining || this.disposed) {
+      return Promise.resolve(hostCallFailure('session-worker/shutting-down', 'worker is shutting down'))
+    }
+    const requestId = randomUUID()
+    const deferred = Promise.withResolvers<ConnectionRpcResult<unknown>>()
+    this.hostCalls.set(requestId, deferred)
+    const abort = (): void => {
+      if (!this.hostCalls.delete(requestId)) return
+      deferred.resolve(hostCallFailure('session-worker/call-cancelled', 'host call cancelled'))
+    }
+    signal?.addEventListener('abort', abort, { once: true })
+    void deferred.promise.then(() => {
+      signal?.removeEventListener('abort', abort)
+      this.hostCalls.delete(requestId)
+    })
+    this.send({ channel: 'rpc', type: 'host-call', requestId, service, method, payload })
+    return deferred.promise
+  }
+
   private async dispatchUnary(requestId: string, request: ClientRequest): Promise<void> {
     if (this.draining) {
       this.send({
@@ -358,6 +440,10 @@ class SessionWorkerBridge {
       stream.abort.abort(new Error('session-worker: shutting down'))
       stream.uplink.fail(new Error('session-worker: shutting down'))
     }
+    for (const pending of this.hostCalls.values()) {
+      pending.resolve(hostCallFailure('session-worker/shutting-down', 'worker is shutting down'))
+    }
+    this.hostCalls.clear()
     let flushedSessions = 0
     try {
       for (const agent of this.ctx.agents.list()) {
@@ -441,4 +527,8 @@ class SessionWorkerBridge {
   private unexpected(frame: never): void {
     throw new Error(`session-worker: unexpected frame ${JSON.stringify(frame)}`)
   }
+}
+
+function hostCallFailure(code: string, message: string): ConnectionRpcResult<never> {
+  return { ok: false, error: { code, message, details: {} } }
 }

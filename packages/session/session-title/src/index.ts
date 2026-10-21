@@ -394,6 +394,18 @@ export class SessionTitleService extends Service {
   }
 
   /**
+   * Whether a title call is still running.
+   * @returns `true` while any provider call is pending or active.
+   */
+  isBusy(): boolean {
+    if (this.inFlight.size > 0) return true
+    for (const state of this.work.values()) {
+      if (state.pending !== undefined || state.active !== undefined) return true
+    }
+    return false
+  }
+
+  /**
    * Accept an explicit user title. Appends a `session/title` event with the
    * `user` source, which pins the title: in-flight automatic generation is
    * superseded and later user messages schedule none (an explicit

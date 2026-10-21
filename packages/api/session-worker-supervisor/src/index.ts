@@ -34,6 +34,7 @@ import {
   decodeBody,
   encodeFrame,
   isPassiveStreamEndpoint,
+  type WorkerHostCallFrame,
   type WorkerRpcErrorFrame,
   type WorkerToHostFrame,
   type WorkerUnaryResponseFrame,
@@ -200,6 +201,21 @@ export interface SessionWorkerHandle {
 }
 
 /** Host-side supervisor service (`ctx.sessionWorkers`). */
+/**
+ * One host-owned service method a worker may call back into.
+ * @param sessionId - worker's bound Session, for ownership checks.
+ * @param method - requested service method.
+ * @param payload - caller payload.
+ * @param signal - cancellation signalled when the worker dies.
+ * @returns the unary result envelope returned to the worker.
+ */
+export type SessionWorkerHostCallHandler = (
+  sessionId: SessionId,
+  method: string,
+  payload: unknown,
+  signal: AbortSignal,
+) => Promise<ConnectionRpcResult<unknown>>
+
 export class SessionWorkerSupervisor extends Service {
   static inject = ['subprocess']
 
@@ -208,6 +224,7 @@ export class SessionWorkerSupervisor extends Service {
 
   private readonly config: ResolvedConfig
   private readonly workers = new Map<SessionId, SessionWorkerConnection>()
+  private readonly hostCallHandlers = new Map<string, SessionWorkerHostCallHandler>()
   private readonly acquiring = new Map<SessionId, Promise<SessionWorkerConnection>>()
   private readonly exiting = new Map<SessionId, Promise<void>>()
   private disposed = false
@@ -279,6 +296,28 @@ export class SessionWorkerSupervisor extends Service {
     this.workers.clear()
   }
 
+  /**
+   * Stop every worker currently reporting idle, leaving a running turn alone.
+   * The next prompt spawns a worker from the current profile patch.
+   */
+  async shutdownIdleWorkers(): Promise<void> {
+    const idle = [...this.workers.values()].filter(worker => worker.idle)
+    await Promise.allSettled(idle.map(worker => worker.shutdown()))
+  }
+
+  /**
+   * Publish a host-owned service the workers may call back into.
+   * @param service - service name the worker sends.
+   * @param handler - method dispatcher for that service.
+   * @returns disposer for the registration.
+   */
+  registerHostCallHandler(service: string, handler: SessionWorkerHostCallHandler): () => void {
+    this.hostCallHandlers.set(service, handler)
+    return () => {
+      if (this.hostCallHandlers.get(service) === handler) this.hostCallHandlers.delete(service)
+    }
+  }
+
   private async spawnWorker(sessionId: SessionId): Promise<SessionWorkerConnection> {
     const spec = {
       argv: [...this.config.command, '--profile', this.config.profile, ...this.config.args],
@@ -303,6 +342,7 @@ export class SessionWorkerSupervisor extends Service {
       onClosed: (closed) => {
         if (this.workers.get(sessionId) === closed) this.workers.delete(sessionId)
       },
+      hostCall: service => this.hostCallHandlers.get(service),
     })
     this.workers.set(sessionId, worker)
     const exited = worker.exited.finally(() => {
@@ -331,6 +371,7 @@ class SessionWorkerConnection implements SessionWorkerHandle {
   readonly exited: Promise<void>
   private readonly decoder: SessionWorkerFrameDecoder
   private readonly pending = new Map<string, PromiseWithResolvers<ConnectionRpcResult<unknown>>>()
+  private readonly hostCalls = new Set<AbortController>()
   private readonly streams = new Map<string, SessionWorkerStream>()
   private readonly readyDeferred = Promise.withResolvers<void>()
   private readonly idleWaiters = new Set<PromiseWithResolvers<boolean>>()
@@ -352,7 +393,10 @@ class SessionWorkerConnection implements SessionWorkerHandle {
     readonly sessionId: SessionId,
     private readonly handle: SubprocessHandle,
     private readonly config: ResolvedConfig,
-    private readonly hooks: { readonly onClosed: (worker: SessionWorkerConnection) => void },
+    private readonly hooks: {
+      readonly onClosed: (worker: SessionWorkerConnection) => void
+      readonly hostCall: (service: string) => SessionWorkerHostCallHandler | undefined
+    },
   ) {
     this.decoder = new SessionWorkerFrameDecoder(config.maxFrameBytes)
     this.exited = handle.done.then(() => undefined, () => undefined).finally(() => {
@@ -538,6 +582,9 @@ class SessionWorkerConnection implements SessionWorkerHandle {
             this.shutdownAck?.resolve()
             this.shutdownAck = undefined
             return
+          case 'host-call':
+            this.handleHostCall(frame)
+            return
           /* v8 ignore next 2 -- parser admits only these rpc types. */
           default:
             this.unexpected(frame)
@@ -568,6 +615,40 @@ class SessionWorkerConnection implements SessionWorkerHandle {
     }
   }
 
+  private handleHostCall(frame: WorkerHostCallFrame): void {
+    const handler = this.hooks.hostCall(frame.service)
+    if (handler === undefined) {
+      this.write({
+        channel: 'rpc',
+        type: 'host-call-result',
+        requestId: frame.requestId,
+        result: workerFailure(
+          'session-worker/unknown-host-service',
+          `worker requested unknown host service ${JSON.stringify(frame.service)}`,
+        ),
+      })
+      return
+    }
+    const cancellation = new AbortController()
+    this.hostCalls.add(cancellation)
+    void handler(this.sessionId, frame.method, frame.payload, cancellation.signal)
+      .then((result) => {
+        this.write({ channel: 'rpc', type: 'host-call-result', requestId: frame.requestId, result })
+      })
+      .catch((error: unknown) => {
+        this.write({
+          channel: 'rpc',
+          type: 'host-call-result',
+          requestId: frame.requestId,
+          result: workerFailure(
+            'session-worker/host-call-failed',
+            error instanceof Error ? error.message : String(error),
+          ),
+        })
+      })
+      .finally(() => { this.hostCalls.delete(cancellation) })
+  }
+
   private settleResponse(frame: WorkerUnaryResponseFrame): void {
     const deferred = this.pending.get(frame.requestId)
     if (deferred === undefined) return
@@ -584,7 +665,7 @@ class SessionWorkerConnection implements SessionWorkerHandle {
     }
     let parsed: unknown
     try {
-      parsed = JSON.parse(Buffer.from(bytes).toString('utf8')) as unknown
+      parsed = JSON.parse(Buffer.from(bytes).toString('utf8'))
     } catch {
       deferred.resolve(workerFailure('gateway/internal', 'worker response body is not JSON'))
       return
@@ -695,6 +776,8 @@ class SessionWorkerConnection implements SessionWorkerHandle {
     this.streams.clear()
     for (const waiter of this.idleWaiters) waiter.resolve(false)
     this.idleWaiters.clear()
+    for (const call of this.hostCalls) call.abort(reason)
+    this.hostCalls.clear()
     this.shutdownAck?.reject(reason)
     this.shutdownAck = undefined
     this.hooks.onClosed(this)

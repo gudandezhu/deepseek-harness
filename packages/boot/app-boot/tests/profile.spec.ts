@@ -356,7 +356,7 @@ describe('loadProfile', () => {
       .toEqual([...PROFILE_TEMPLATES.web?.bundles ?? []])
   })
 
-  it('normalizes only the exact installation-owned headless bundle tuple', () => {
+  it('normalizes only the exact installation-owned headless tuple and adds the shared agent plane', () => {
     const anchor = stageInstallation({
       '@deepseek-ai/dsh-base': { patch: '[]\n' },
       '@deepseek-ai/dsh-web-app': { patch: '[]\n' },
@@ -381,9 +381,28 @@ describe('loadProfile', () => {
       '@deepseek-ai/dsh-base', '@deepseek-ai/dsh-web-app', '@deepseek-ai/dsh-headless', 'custom-bundle',
     ])
     loadProfile('t', 'headless', anchor, customHome)
+    // A non-exact tuple keeps its surface list; the shared agent plane is
+    // inserted before the surface bundle that expects its presets.
     expect(readProfileManifest('t', custom).dsh?.profile?.bundles).toEqual([
-      '@deepseek-ai/dsh-base', '@deepseek-ai/dsh-web-app', '@deepseek-ai/dsh-headless', 'custom-bundle',
+      '@deepseek-ai/dsh-base', '@deepseek-ai/dsh-agent-plane',
+      '@deepseek-ai/dsh-web-app', '@deepseek-ai/dsh-headless', 'custom-bundle',
     ])
+  })
+
+  it('inserts the shared agent plane into an existing web surface exactly once', () => {
+    const anchor = stageInstallation({
+      '@deepseek-ai/dsh-base': { patch: '[]\n' },
+      '@deepseek-ai/dsh-agent-plane': { patch: '[]\n' },
+      '@deepseek-ai/dsh-web-app': { patch: '[]\n' },
+    })
+    const home = tmp()
+    const dir = resolveProfileDir('tauri', home)
+    initProfile(dir, ['@deepseek-ai/dsh-base', '@deepseek-ai/dsh-web-app'])
+    loadProfile('t', 'tauri', anchor, home)
+    const inserted = ['@deepseek-ai/dsh-base', '@deepseek-ai/dsh-agent-plane', '@deepseek-ai/dsh-web-app']
+    expect(readProfileManifest('t', dir).dsh?.profile?.bundles).toEqual(inserted)
+    loadProfile('t', 'tauri', anchor, home)
+    expect(readProfileManifest('t', dir).dsh?.profile?.bundles).toEqual(inserted)
   })
 
   it('removes a retired bundle from an application-owned profile and keeps the rest of the manifest', () => {

@@ -50,6 +50,17 @@ const WEB_SURFACE_GUIDANCE = 'When the user refers to "this page", "this GUI", o
 
 const WEB_SURFACE_PROMPT = `You are interacting with the user through the DeepSeek Harness Web GUI whose URL the runtime context names. ${WEB_SURFACE_GUIDANCE}`
 
+/** Prompt-section name for how the GUI renders links and presented files. */
+const DELIVERABLE_FILE_REFERENCES = 'ui:deliverable-file-references'
+
+const DELIVERABLE_FILE_REFERENCES_PROMPT = 'Prefer showing the primary results within your final response alongside a brief explanation. '
+  + 'Use ![Description](<path/to/image.png>) when an image supports an explanation or comparison. Use [Description](<path/to/image.png>) when referring to an image or listing files. Enclose Markdown file destinations in angle brackets, especially paths containing spaces. '
+  + 'Do not call present just to list edited source files, or run commands to check whether a diff view will appear. '
+  + 'Use present when a separate file card helps the user open the complete deliverable, including images, Office documents, spreadsheets, and slide decks. Each presented file adds a card below the reply, with preview and native-open actions. '
+  + 'Avoid repeating results already shown inline unless the separate card adds useful access. '
+  + 'Outside commands, configuration expressions, and code blocks, link every mention of an existing file, including repeats and tables, to its full path relative to the working directory or absolute; append #L24 or #L24-L30 to the target for known lines. '
+  + 'Use the filename or a clear alias as the label, adding only enough parent directories to distinguish files; keep full paths out of labels. Default to the name alone; when precise locations matter, append :24 or :24–30, with no # or L in the line suffix.'
+
 /**
  * Fixed text around the value in each paragraph that embedded it, frozen as
  * those releases rendered it: never edit these together with the current
@@ -161,5 +172,13 @@ export function apply(ctx: Context): void {
     order: ctx.systemPrompt.getContextOrder('WEB_SURFACE'),
     interpolate: false,
     text: () => `Current DeepSeek Harness Web GUI URL: ${JSON.stringify(ctx.webApp.getAdvertisedUrl())}.`,
+  })
+  // The GUI renders links and presented files; the Agent that writes replies
+  // runs wherever the Session runs, so this guidance belongs to the Web
+  // surface rather than to the browser client's node half.
+  ctx.systemPrompt.section({
+    name: DELIVERABLE_FILE_REFERENCES,
+    order: ctx.systemPrompt.getSectionOrder('DELIVERABLE_FILE_REFERENCES'),
+    text: DELIVERABLE_FILE_REFERENCES_PROMPT,
   })
 }

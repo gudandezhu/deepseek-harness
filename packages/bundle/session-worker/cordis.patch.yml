@@ -9,11 +9,6 @@
     personaPrefix: >-
       You are a coding agent powered by the {{model}} model.
 
-# Session titles issue an auxiliary model request. The worker must not hold a
-# process open for decorative work after its last turn settles.
-- id: session-title-llm
-  disabled: true
-
 - id: hmr
   disabled: true
 
@@ -56,3 +51,17 @@
       config:
         idleQuietMs: 1000
         idlePollMs: 250
+
+    # Host-owned services the presets read, forwarded over the bridge's
+    # reverse-call channel (Schedule keeps one store and timer in the Host).
+    # When the Host passes the advertised GUI URL, this row also provides
+    # `webApp` for the dev-context row below.
+    - id: session-worker-host-services
+      name: '@deepseek-ai/dsh-session-worker-bridge/host-services'
+
+    # The same runtime context the single-process Web composition mounts: the
+    # implementation checkout and the advertised GUI URL. The Host sets
+    # DSH_WEB_URL on spawn; a worker without a Web surface keeps the row off.
+    - id: harness-dev-context
+      name: '@deepseek-ai/dsh-harness-dev-context'
+      disabled: !!js '!process.env.DSH_WEB_URL'

@@ -12,8 +12,17 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
-import WebSocket, { type RawData } from 'ws'
+import WebSocket from 'ws'
 import { startMockLlmServer, type MockLlmServer } from '@deepseek-ai/dsh-llm-mock-server'
+import {
+  announcedUrl,
+  authenticate,
+  delay,
+  MuxClient,
+  requestRpc,
+  StreamReader,
+  type ServerResponseEnvelope,
+} from './support/browser-client.ts'
 
 const repositoryRoot = fileURLToPath(new URL('../../../../', import.meta.url))
 const cliEntry = join(repositoryRoot, 'apps/cli/src/bin.ts')
@@ -21,14 +30,6 @@ const MOCK_TEXT = 'mock reply from a session worker'
 const APPROVAL_FILE_TEXT = 'hello from the approval fixture'
 const IDLE_TTL_MS = 1_500
 const UI_TIMEOUT_MS = 180_000
-
-interface ServerResponseEnvelope {
-  readonly type: 'server-response'
-  readonly rpcId: string
-  readonly result:
-    | { readonly ok: true; readonly value: unknown }
-    | { readonly ok: false; readonly error: { readonly code: string; readonly message: string } }
-}
 
 interface FollowSnapshot {
   readonly type: 'snapshot' | 'reset'
@@ -73,6 +74,10 @@ beforeAll(async () => {
   ].join('\n'))
   const patch = join(home, 'approval.patch.yml')
   await writeFile(patch, [
+    // Title generation issues its own auxiliary model request; this suite
+    // scripts exact model responses, so keep request order deterministic.
+    '- id: session-title-llm',
+    '  disabled: true',
     '- insert:',
     '    - id: e2e-approval',
     `      name: ${JSON.stringify(fixture)}`,
@@ -108,7 +113,7 @@ beforeAll(async () => {
     host.stderr?.on('data', (chunk: Buffer) => { process.stderr.write(`[worker-host stderr] ${chunk.toString('utf8')}`) })
     host.stdout?.on('data', (chunk: Buffer) => { process.stderr.write(`[worker-host stdout] ${chunk.toString('utf8')}`) })
   }
-  const url = await announcedUrl(host)
+  const url = await announcedUrl(host, UI_TIMEOUT_MS)
   origin = new URL(url).origin
   cookie = await authenticate(url)
   mux = await MuxClient.connect(origin, cookie)
@@ -169,6 +174,7 @@ describe('web host session workers', () => {
     expect(answered.ok, JSON.stringify(answered)).toBe(true)
 
     const turn = await collectTurn(follow)
+
     expect(turn.tools).toContain(APPROVAL_FILE_TEXT)
     expect(turn.assistant).toContain(MOCK_TEXT)
   }, 600_000)
@@ -313,19 +319,8 @@ describe('web host session workers', () => {
   }, 600_000)
 })
 
-async function rpc(endpoint: string, args: Record<string, unknown>): Promise<ServerResponseEnvelope['result']> {
-  const response = await fetch(`${origin}/api/${endpoint}`, {
-    method: 'POST',
-    headers: { 'content-type': 'application/json', cookie },
-    body: JSON.stringify({
-      type: 'client-request',
-      rpcId: `rpc-${endpoint}-${Date.now()}`,
-      method: endpoint,
-      payload: { args },
-    }),
-  })
-  const envelope = await response.json() as ServerResponseEnvelope
-  return envelope.result
+function rpc(endpoint: string, args: Record<string, unknown>): Promise<ServerResponseEnvelope['result']> {
+  return requestRpc(origin, cookie, endpoint, args)
 }
 
 async function collectTurn(reader: StreamReader): Promise<{ readonly assistant: string; readonly tools: string }> {
@@ -369,38 +364,6 @@ async function waitForWaterfall(reader: StreamReader): Promise<WaterfallFrame> {
     if (frame.type === 'waterfall') return frame as WaterfallFrame
   }
   throw new Error('no worker waterfall reached the browser before the deadline')
-}
-
-function announcedUrl(child: ChildProcess): Promise<string> {
-  return new Promise((resolve, reject) => {
-    let output = ''
-    const timer = setTimeout(() => {
-      reject(new Error(`web host did not announce its URL; output:\n${output}`))
-    }, UI_TIMEOUT_MS)
-    const onData = (chunk: Buffer): void => {
-      output += chunk.toString('utf8')
-      const match = /dsh web: (http:\/\/\S+)/.exec(output)
-      if (match?.[1] === undefined) return
-      clearTimeout(timer)
-      child.stdout?.off('data', onData)
-      resolve(match[1])
-    }
-    child.stdout?.on('data', onData)
-    child.stderr?.on('data', (chunk: Buffer) => { output += chunk.toString('utf8') })
-    child.once('exit', (code) => {
-      clearTimeout(timer)
-      reject(new Error(`web host exited with ${String(code)}; output:\n${output}`))
-    })
-  })
-}
-
-async function authenticate(url: string): Promise<string> {
-  const response = await fetch(url, { redirect: 'manual' })
-  const setCookie = response.headers.getSetCookie()[0]
-    ?? response.headers.get('set-cookie')
-    ?? undefined
-  if (setCookie === undefined) throw new Error(`web host did not issue a browser cookie (${String(response.status)})`)
-  return setCookie.split(';', 1)[0] as string
 }
 
 interface ChildProcessInfo {
@@ -458,109 +421,5 @@ function isAlive(pid: number): boolean {
     return true
   } catch {
     return false
-  }
-}
-
-async function delay(ms: number): Promise<void> {
-  await new Promise<void>((resolve) => { setTimeout(resolve, ms) })
-}
-
-/** One logical browser stream over the Gateway mux. */
-class StreamReader {
-  private readonly items: unknown[] = []
-  private wake: (() => void) | undefined
-  private failure: Error | undefined
-  private ended = false
-
-  push(value: unknown): void {
-    this.items.push(value)
-    this.wake?.()
-    this.wake = undefined
-  }
-
-  fail(error: Error): void {
-    this.failure = error
-    this.wake?.()
-    this.wake = undefined
-  }
-
-  end(): void {
-    this.ended = true
-    this.wake?.()
-    this.wake = undefined
-  }
-
-  async next(timeoutMs: number = UI_TIMEOUT_MS): Promise<unknown> {
-    const deadline = Date.now() + timeoutMs
-    for (;;) {
-      if (this.items.length > 0) return this.items.shift()
-      if (this.failure !== undefined) throw this.failure
-      if (this.ended) throw new Error('stream ended before the expected frame')
-      const remaining = deadline - Date.now()
-      if (remaining <= 0) throw new Error('stream frame timed out')
-      await new Promise<void>((resolve, reject) => {
-        const timer = setTimeout(() => {
-          this.wake = undefined
-          reject(new Error('stream frame timed out'))
-        }, remaining)
-        this.wake = () => {
-          clearTimeout(timer)
-          resolve()
-        }
-      })
-    }
-  }
-}
-
-function rawText(data: RawData): string {
-  if (Array.isArray(data)) return Buffer.concat(data).toString('utf8')
-  if (data instanceof ArrayBuffer) return Buffer.from(data).toString('utf8')
-  return data.toString('utf8')
-}
-
-/** WebSocket mux client that unwraps one logical stream per id. */
-class MuxClient {
-  private readonly readers = new Map<string, StreamReader>()
-  private counter = 0
-
-  private constructor(private readonly socket: WebSocket) {
-    socket.on('message', (data: RawData) => {
-      const message = JSON.parse(rawText(data)) as {
-        type: string
-        streamId: string
-        value?: unknown
-        error?: { code: string; message: string }
-      }
-      const reader = this.readers.get(message.streamId)
-      if (reader === undefined) return
-      if (message.type === 'item') reader.push(message.value)
-      else if (message.type === 'end') reader.end()
-      else if (message.type === 'error') reader.fail(new Error(`${message.error?.code ?? 'stream'}: ${message.error?.message ?? ''}`))
-    })
-  }
-
-  static async connect(origin: string, cookie: string): Promise<MuxClient> {
-    const socket = new WebSocket(`${origin.replace(/^http/, 'ws')}/api/remote.mux`, { headers: { cookie } })
-    await new Promise<void>((resolve, reject) => {
-      socket.once('open', () => { resolve() })
-      socket.once('error', reject)
-    })
-    return new MuxClient(socket)
-  }
-
-  get readyState(): number {
-    return this.socket.readyState
-  }
-
-  open(endpoint: string, args: Record<string, unknown>): StreamReader {
-    const streamId = `stream-${++this.counter}`
-    const reader = new StreamReader()
-    this.readers.set(streamId, reader)
-    this.socket.send(JSON.stringify({ type: 'open', streamId, endpoint, payload: { args } }))
-    return reader
-  }
-
-  close(): void {
-    this.socket.terminate()
   }
 }

@@ -9,7 +9,7 @@ kind: "package-reference"
 
 ## 概述
 
-本包渲染已完成轮次末尾的改动文件卡片——列出本轮改动的文件及 Host 记录的行数，每一行在该文件上打开本轮的 review tab——以及显式交付文件的卡片，并把收尾正文中匹配的行内代码引用转为链接，让被点名的文件在右侧 Sidebar 中打开。列出与链接的路径来自记录的改动摘要、成功的文件修改与显式交付，而非收尾正文。只有正式提供的 Web patch 加载本包；删除其 cordis.yml 条目会同时移除指引、卡片与正文链接。
+本包渲染已完成轮次末尾的改动文件卡片——列出本轮改动的文件及 Host 记录的行数，每一行在该文件上打开本轮的 review tab——以及显式交付文件的卡片，并把收尾正文中匹配的行内代码引用转为链接，让被点名的文件在右侧 Sidebar 中打开。列出与链接的路径来自记录的改动摘要、成功的文件修改与显式交付，而非收尾正文。只有正式提供的 Web patch 加载本包；删除其 cordis.yml 条目会同时移除卡片与正文链接。
 
 ## 目录
 
@@ -64,7 +64,7 @@ Web 的 `standard`、`ptc` 与 `cordis` preset 提供 `present`，用于声明�
 <details>
 <summary>实现细节——点击展开</summary>
 
-Node 半部注册[模型体验](#model-experience)所述的静态 `ui:deliverable-file-references` 系统提示词段。显式 Markdown 链接使用共享的 [Markdown 渲染器](../ui-primitives/README.zh.md)；行内代码匹配仍仅限产出或交付文件。浏览器半部把组合改动文件卡片与显式交付的包装组件注册进 chat 视图的 `conversation.chat.turnTail` 列表，与其他功能产物并列。`deliverablesDefinition` 把每个轮次最新且通过校验的 `workspace/changes` 宣告的序号折叠进 `DeliverablesTurnData.changes`，卡片按它向 Host 读取摘要并缓存到连接被替换为止，把 `deliverables/presented` 事件折叠为交付，并根据 `write`、`edit` 和有修改作用的 `str_replace_editor` 命令中经过校验的原始参数与结果记录的绝对 `meta.path` 把成功的第一方修改调用折叠为产出路径及精确参数别名；产出路径只供正文提及解析器使用。不带该字段的成功根调用保留历史参数回退；格式错误的相对目标不产生猜测路径。读取、删除、不受支持的工具、格式错误的调用、格式错误的事件和失败结果不贡献任何条目。每一行通过 `ctx.sidebarRight.openResource` 打开 `dsh-resource://changes-review/session/<sessionId>/<seq>/<turn>`，并以文件下标作为 `changes-review` 的导航参数；本包在 `builtin` 档为该模式注册 `changes-review` tab 类型，把其 body 连同一个按 tab 保存选择的独占 store 注册到按键的 `sidebar.right.pane.tab` 座位下，body 通过经过认证的路由把摘要和对比读进连接更换时清空的 store。本包还提供 chat 视图按收尾消息查询的 `chatFileMentions` 服务；把插件组合出去会移除全部表面，视图的空列表以零成本留下。
+显式 Markdown 链接使用共享的 [Markdown 渲染器](../ui-primitives/README.zh.md)；行内代码匹配仍仅限产出或交付文件。浏览器半部把组合改动文件卡片与显式交付的包装组件注册进 chat 视图的 `conversation.chat.turnTail` 列表，与其他功能产物并列。`deliverablesDefinition` 把每个轮次最新且通过校验的 `workspace/changes` 宣告的序号折叠进 `DeliverablesTurnData.changes`，卡片按它向 Host 读取摘要并缓存到连接被替换为止，把 `deliverables/presented` 事件折叠为交付，并根据 `write`、`edit` 和有修改作用的 `str_replace_editor` 命令中经过校验的原始参数与结果记录的绝对 `meta.path` 把成功的第一方修改调用折叠为产出路径及精确参数别名；产出路径只供正文提及解析器使用。不带该字段的成功根调用保留历史参数回退；格式错误的相对目标不产生猜测路径。读取、删除、不受支持的工具、格式错误的调用、格式错误的事件和失败结果不贡献任何条目。每一行通过 `ctx.sidebarRight.openResource` 打开 `dsh-resource://changes-review/session/<sessionId>/<seq>/<turn>`，并以文件下标作为 `changes-review` 的导航参数；本包在 `builtin` 档为该模式注册 `changes-review` tab 类型，把其 body 连同一个按 tab 保存选择的独占 store 注册到按键的 `sidebar.right.pane.tab` 座位下，body 通过经过认证的路由把摘要和对比读进连接更换时清空的 store。本包还提供 chat 视图按收尾消息查询的 `chatFileMentions` 服务；把插件组合出去会移除全部表面，视图的空列表以零成本留下。
 
 原生打开使用经过认证的 POST，通过当前查看的会话、事件序号和原始文件索引定位声明；review tab 对改动文件的原生打开使用同一组坐标。对声明，Host 读取事件及当前查看的会话 header，将其中的 cwd 传给 `workspaceFiles.stat`，未记录 cwd 时使用部署的工作目录；对改动文件，传的是所提供摘要携带的工作目录。它与侧栏预览使用同一组合文件系统，无需启动 Agent，子会话也适用。原生操作要求规范化的进程路径能从 Host 路径映射回同一进程路径。提供方没有这种映射时返回 422，之后 review tab 隐藏原生打开；Host 上存在同名文件并不足够。同一份桌面可用性配置同时约束信息查询和实际执行。编辑会影响后续打开的内容；删除后返回错误。不创建文件内容副本或附件。插件释放时取消并等待进行中的原生打开请求。
 
@@ -89,19 +89,11 @@ Node 半部注册[模型体验](#model-experience)所述的静态 `ui:deliverabl
 <a id="model-experience"></a>
 ## 模型体验
 
-### 可点击文件引用指引
+无。本包为人类渲染交付物界面，不注册提示词段落、工具或 Session 事件；`ui:deliverable-file-references` 指引属于 [harness-dev-context](../../context/harness-dev-context/README.zh.md#model-experience)。
 
-#### 模型看到的内容
+#### KV 缓存影响
 
-提示词建议在最终回复中展示主要结果：内嵌图片用于讲解与对比，图片链接用于引用和文件列表，图片文件卡片用于独立交付。文件目标路径使用尖括号包裹，包括含空格的路径。对于需要完整文件的交付，尤其是 Office 文件，建议使用独立的 `present` 卡片，通常选最重要的一两项，需要时可以更多，但每次调用最多四项。提示词建议避免仅为列出代码改动生成卡片，也不为确认 diff 是否显示额外运行命令。代码工作工具关闭时仍采用这条建议，接受较少的文件展示入口，以减少重复展示和不必要的工具调用。文件引用要求链接命令、配置表达式和代码块以外的每次现有文件提及，包括重复提及和表格。标签默认使用文件名或清楚的别名，仅添加足以区分文件的父目录。精确引用显示为 `filename:24` 或 `filename:24–30`；目标保留完整相对路径或绝对路径，以及 `#L24` 或 `#L24-L30` 锚点。显示后缀不含 `#` 或 `L`。
-
-#### Token 影响
-
-加载本包时增加一段包含产出选择、渲染效果和文件引用指导的固定提示词。[present 工具](../../deliverables/tool-present/README.zh.md#model-experience)拥有交付 schema 和结果文本。
-
-#### KV Cache 影响
-
-该段落在本包挂载期间始终以 first-party 顺序 9000 保持静态，因此留在可复用的提示词前缀中，不会随轮次改变。
+无；本包从不组装或发送 provider 请求。
 
 ## 已知限制与延期工作
 

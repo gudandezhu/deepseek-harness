@@ -23,6 +23,7 @@ This group maps the installable patch layers used by `dsh --profile`. Each packa
 | Package | Role | ctx key |
 |---|---|---|
 | [`base`](base/README.md) | Shared core for base-backed profiles | — (patch only) |
+| [`agent-plane`](agent-plane/README.md) | Preset registry and declarations shared by the Web and session-worker surfaces | mounts `agentPresets` |
 | [`acp-app`](acp-app/README.md) | Automation-only ACP stdio application over base | mounts the ACP bridge |
 | [`web-app`](web-app/README.md) | Browser application layer over base | mounts Web rows |
 | [`headless`](headless/README.md) | One-shot command-line task application over base | `headless-runner` |

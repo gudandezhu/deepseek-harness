@@ -9,7 +9,10 @@
  * @module @deepseek-ai/dsh-session-worker-host
  */
 
+import { existsSync } from 'node:fs'
 import type { Context } from '@deepseek-ai/cordis'
+import { INHERITED_PROFILE_PATCH_ENV } from '@deepseek-ai/dsh-app-boot'
+import type {} from '@deepseek-ai/dsh-settings'
 import type {} from '@deepseek-ai/dsh-workspace'
 import type {} from '@deepseek-ai/dsh-workspace/types'
 import z from '@deepseek-ai/schemastery'
@@ -29,6 +32,7 @@ import {
 } from '@deepseek-ai/dsh-session-worker-supervisor'
 import { DEFAULT_FORWARDED_ENV, forwardedEnvironment, hostWorkerCommand, inheritedPatchArgs } from './command.ts'
 import { SessionWorkerEvents } from './events.ts'
+import { registerHostCalls } from './host-calls.ts'
 import { SessionWorkerRouter } from './router.ts'
 
 export {
@@ -110,7 +114,7 @@ export const Config: z<Config> = z.object({
  * @param config - worker command and reclaim policy.
  */
 export function apply(ctx: Context, config: Config = {}): void {
-  const resolved = resolveConfig(config)
+  const resolved = resolveConfig(ctx, config)
   const lives = new SessionWorkerLives(ctx, resolved.liveEventLimit, {
     projectionLimit: resolved.projectionLimit,
     coldTtlMs: resolved.coldSessionTtlMs,
@@ -134,6 +138,7 @@ export function apply(ctx: Context, config: Config = {}): void {
     if (supervisor === undefined) return
     const router = new SessionWorkerRouter(workerCtx, supervisor, lives, events)
     ctx.provide('sessionWorkerRouter', router)
+    registerHostCalls(workerCtx, supervisor)
     // Schedule delivery is an ordinary routed write; publishing the port keeps
     // the Schedule runtime from resolving a second Agent in the Host.
     ctx.provide('sessionReminderDelivery', router)
@@ -150,6 +155,14 @@ export function apply(ctx: Context, config: Config = {}): void {
   })
   ctx.on('workspace/session-stop', async ({ sessionId }) => {
     await ctx.get('sessionWorkers')?.shutdown(sessionId)
+  })
+  // A Settings or preset write reaches a worker only through its profile
+  // patch at spawn. Reclaim idle workers so the next prompt composes from the
+  // new patch; a running turn keeps its worker until it settles.
+  ctx.on('settings/document-updated', () => {
+    void ctx.get('sessionWorkers')?.shutdownIdleWorkers().catch((error: unknown) => {
+      ctx.logger.warn('session-worker: reclaiming idle workers after a settings change failed', error)
+    })
   })
 }
 
@@ -190,7 +203,7 @@ function electronEnvironment(): Record<string, string> {
   return process.versions.electron === undefined ? {} : { ELECTRON_RUN_AS_NODE: '1' }
 }
 
-function resolveConfig(config: Config): ResolvedConfig {
+function resolveConfig(ctx: Context, config: Config): ResolvedConfig {
   // The schema materializes an unspecified string array as `[]`, so an empty
   // value means "derive it" rather than "boot nothing".
   const command = config.command !== undefined && config.command.length > 0
@@ -204,7 +217,12 @@ function resolveConfig(config: Config): ResolvedConfig {
     : DEFAULT_FORWARDED_ENV
   // The subprocess scrub removes DSH_* and credential-shaped names, so the
   // deployment identity and any exported provider credential travel here.
-  const env = { ...forwardedEnvironment(forwardEnv), ...electronEnvironment(), ...config.env }
+  const env = {
+    ...forwardedEnvironment(forwardEnv),
+    ...electronEnvironment(),
+    ...inheritedProfilePatch(ctx),
+    ...config.env,
+  }
   return {
     command,
     profile: config.profile ?? DEFAULT_WORKER_PROFILE,
@@ -219,6 +237,18 @@ function resolveConfig(config: Config): ResolvedConfig {
     coldSessionTtlMs: config.coldSessionTtlMs ?? DEFAULT_COLD_SESSION_TTL_MS,
     maxColdSessions: config.maxColdSessions ?? DEFAULT_MAX_COLD_SESSIONS,
   }
+}
+
+/**
+ * Hand the Host profile patch to the worker so a preset or Settings edit made
+ * under the web profile also composes the worker's agent.
+ * @param ctx - Host context; profiles launched by `dsh` provide `profileContext`.
+ * @returns the inherited-patch environment entry, or nothing without a patch file.
+ */
+function inheritedProfilePatch(ctx: Context): Record<string, string> {
+  const profile = ctx.get('profileContext')
+  if (profile === undefined || !existsSync(profile.patchPath)) return {}
+  return { [INHERITED_PROFILE_PATCH_ENV]: profile.patchPath }
 }
 
 function idleTimeoutFromEnvironment(): number {

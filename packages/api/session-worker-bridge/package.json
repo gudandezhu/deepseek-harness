@@ -19,7 +19,11 @@
       "default": "./lib/index.js"
     },
     "./src/*": "./src/*",
-    "./package.json": "./package.json"
+    "./package.json": "./package.json",
+    "./host-services": {
+      "types": "./lib/types/host-services.d.ts",
+      "default": "./lib/host-services.js"
+    }
   },
   "files": [
     "lib/index.js",
@@ -33,7 +37,9 @@
   "dependencies": {
     "@deepseek-ai/dsh-session-worker-protocol": "workspace:*",
     "@deepseek-ai/dsh-subprocess": "workspace:*",
-    "@deepseek-ai/schemastery": "workspace:~"
+    "@deepseek-ai/schemastery": "workspace:~",
+    "@deepseek-ai/dsh-schedule": "workspace:*",
+    "@deepseek-ai/dsh-cordis-host-runner": "workspace:*"
   },
   "peerDependencies": {
     "@deepseek-ai/cordis": "workspace:~",

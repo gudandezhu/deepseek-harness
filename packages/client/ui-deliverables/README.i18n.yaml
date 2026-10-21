@@ -9,8 +9,8 @@
   en: baa21bacf9d87975
   zh: caf2b019a43f4009
 /deepseek-ai-dsh-client-ui-deliverables/summary:
-  en: a17b97d16803f911
-  zh: ad80cf4bcb5a8018
+  en: 8f76cf1d9c27a786
+  zh: 517838d95f5044f5
 /deepseek-ai-dsh-client-ui-deliverables/table-of-contents:
   en: d152484eb41ac6b4
   zh: 09388d293f9be9cb
@@ -30,26 +30,17 @@
   en: ef13aac8ac36a5c3
   zh: 1e2ae4b3eaf98818
 /deepseek-ai-dsh-client-ui-deliverables/understand-the-implementation:
-  en: 13e06395a2c447bf
-  zh: c2c29bbfbfabe756
+  en: a455667198ff2013
+  zh: d4c19aa17e060c5b
 /deepseek-ai-dsh-client-ui-deliverables/further-exploration:
   en: 476b59e8671db982
   zh: b3d0495a03e8940a
 /deepseek-ai-dsh-client-ui-deliverables/model-experience:
-  en: 215e7ba838619b7b
-  zh: a311da3843709f90
-/deepseek-ai-dsh-client-ui-deliverables/model-experience/clickable-file-reference-guidance:
-  en: eb244aa21a4e5210
-  zh: e3450addfa19cea5
-/deepseek-ai-dsh-client-ui-deliverables/model-experience/clickable-file-reference-guidance/what-the-model-sees:
-  en: 78339e353ae47a53
-  zh: 582efa623a5dfd72
-/deepseek-ai-dsh-client-ui-deliverables/model-experience/clickable-file-reference-guidance/token-effect:
-  en: 66bd094b37a29c22
-  zh: e657d66ac6f95a22
-/deepseek-ai-dsh-client-ui-deliverables/model-experience/clickable-file-reference-guidance/kv-cache-effect:
-  en: 52626a05acc8b320
-  zh: 6a8e62b0d47d5297
+  en: 3d03e1565572451b
+  zh: 6ab30867e791ddeb
+/deepseek-ai-dsh-client-ui-deliverables/model-experience/kv-cache-effect:
+  en: 47f982e326fe77fd
+  zh: 9f2be5c9af23d759
 /deepseek-ai-dsh-client-ui-deliverables/known-limitations-and-deferred-work:
   en: dcebaf6fd7885452
   zh: 017ef058d4dcdc25

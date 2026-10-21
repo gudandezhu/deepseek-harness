@@ -9,6 +9,7 @@
     "src/index.ts",
     "src/command.ts",
     "src/events.ts",
+    "src/host-calls.ts",
     "src/router.ts"
   ],
   "references": [
@@ -31,10 +32,25 @@
       "path": "../session-controller/tsconfig.host.json"
     },
     {
+      "path": "../session-worker-protocol/tsconfig.host.json"
+    },
+    {
       "path": "../session-worker-supervisor/tsconfig.host.json"
     },
     {
+      "path": "../../schedule/schedule"
+    },
+    {
+      "path": "../../boot/app-boot"
+    },
+    {
       "path": "../../client/connection/tsconfig.host.json"
+    },
+    {
+      "path": "../../preset/agent-preset-registry"
+    },
+    {
+      "path": "../../settings/settings"
     },
     {
       "path": "../../core/session"

@@ -537,6 +537,40 @@ describe('SessionTitleService Provider lifecycle', () => {
     expect(generate).not.toHaveBeenCalled()
   })
 
+  it('reports a running automatic title call as busy until it settles', async () => {
+    const ctx = new Context()
+    await ctx.plugin(SessionStore)
+    await ctx.plugin(SessionProjectionRegistry)
+    await ctx.plugin(SessionTitleService, CONFIG)
+    const gate = deferred<SessionTitleProviderResult>()
+    ctx.sessionTitle.register({
+      id: SessionTitleProviderId('busy-title'),
+      automatic: 'first-prompt',
+      generate: () => gate.promise,
+    })
+    const session = ctx.sessions.create(SessionId('busy-title'))
+    expect(ctx.sessionTitle.isBusy()).toBe(false)
+    session.append('turn/start', {
+      turn: 1,
+    })
+    const message = appendHumanPrompt(session, 'Title this session')
+    await settle()
+    // Scheduled work counts: it is waiting for its exact route, which is
+    // already part of the turn.
+    expect(ctx.sessionTitle.isBusy()).toBe(true)
+    appendRoute(session)
+    await settle()
+    expect(ctx.sessionTitle.isBusy()).toBe(true)
+
+    gate.resolve({ title: 'Settled title', messageSeqs: [message.seq] })
+    await settle()
+    expect(ctx.sessionTitle.isBusy()).toBe(false)
+    expect(ctx.sessionTitle.get(session)).toMatchObject({
+      title: 'Settled title',
+      source: { kind: 'provider', provider: SessionTitleProviderId('busy-title') },
+    })
+  })
+
   it('contains automatic failures but lets explicit refresh reject', async () => {
     const ctx = new Context()
     await ctx.plugin(SessionStore)

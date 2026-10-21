@@ -45,8 +45,8 @@
   en: ddbe5927f55a6275
   zh: 1687795c41c16a8c
 /deepseek-ai-dsh-harness-dev-context/model-experience/harness-checkout-and-web-gui/what-the-model-sees:
-  en: f3236c45cf5bc3a6
-  zh: 1a3499b2e21f4761
+  en: e86c8da3d5e1bf10
+  zh: dd2d9a7d7d895b75
 /deepseek-ai-dsh-harness-dev-context/model-experience/harness-checkout-and-web-gui/what-the-model-sees/system-prompt-paragraphs:
   en: c6c9fa4caf6f2f30
   zh: f501149c17c0ea60
@@ -54,14 +54,14 @@
   en: 37680cbe3eaabef5
   zh: 8c1b432ddf7d20b5
 /deepseek-ai-dsh-harness-dev-context/model-experience/harness-checkout-and-web-gui/token-effect:
-  en: 2c629df08d801b36
-  zh: 437d43a9c5fdc68a
+  en: 8228b4f0c7ddbfdc
+  zh: dce0ba29c1029f95
 /deepseek-ai-dsh-harness-dev-context/model-experience/harness-checkout-and-web-gui/kv-cache-effect:
-  en: e8f89a14bd36dae0
-  zh: bd4ec43e07e234c9
+  en: 755f293fbc937768
+  zh: cd0a80cc4a4bb4f2
 /deepseek-ai-dsh-harness-dev-context/known-limitations-and-deferred-work:
-  en: 558945e2f537db5b
-  zh: f584fcde6275c2da
+  en: 570b57a860ed1b2d
+  zh: ff2d1a4f3c1743f5
 /deepseek-ai-dsh-harness-dev-context/known-limitations-and-deferred-work/dev-note:
   en: e67f633dc6fe7773
   zh: e88aeb617ffb74ea

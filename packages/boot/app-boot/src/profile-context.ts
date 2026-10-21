@@ -36,6 +36,13 @@ declare module '@deepseek-ai/cordis' {
   }
 }
 
+/**
+ * Environment variable carrying a parent process's profile patch into a child
+ * profile. The child applies it after its own profile patch and before the home
+ * layer, so an inherited edit keeps the precedence it had in the parent.
+ */
+export const INHERITED_PROFILE_PATCH_ENV = 'DSH_INHERITED_PROFILE_PATCH'
+
 const TELEMETRY_ROW_ID = 'session-telemetry-otel'
 
 /**
@@ -72,9 +79,11 @@ export function readBundlePatches(binName: string, context: ProfileContext, init
  * @returns Detached ordered patches; this function does not update the Loader.
  */
 export function readProfilePatches(binName: string, context: ProfileContext, initialProfile?: Profile): PatchOptions[] {
+  const inherited = process.env[INHERITED_PROFILE_PATCH_ENV]
   const patches = structuredClone([
     ...readBundlePatches(binName, context, initialProfile),
     ...(initialProfile?.patches ?? loadOptionalPatches(binName, context.patchPath) ?? []),
+    ...(inherited === undefined || inherited === '' ? [] : loadOptionalPatches(binName, inherited) ?? []),
     ...(loadOptionalPatches(binName, join(context.home, PROFILE_PATCH_FILENAME)) ?? []),
     ...context.overlays,
   ])

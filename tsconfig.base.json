@@ -363,6 +363,7 @@
       "@deepseek-ai/dsh-compaction-image-offload/projection": ["./packages/compaction/compaction-image-offload/src/projection.ts"],
       "@deepseek-ai/dsh-session-format-catalog/message-projections": ["./packages/session/session-format-catalog/src/message-projections.ts"],
       "@deepseek-ai/dsh-native-command/types": ["./packages/util/native-command/src/types.ts"],
+      "@deepseek-ai/dsh-session-worker-bridge/host-services": ["./packages/api/session-worker-bridge/src/host-services.ts"],
       // BEGIN generated package aliases — pnpm run gen-tsconfig-paths
       "@deepseek-ai/dsh-acp": ["./packages/acp/acp/src"],
       "@deepseek-ai/dsh-acp-app": ["./packages/bundle/acp-app/src"],
@@ -371,6 +372,7 @@
       "@deepseek-ai/dsh-agent-instructions": ["./packages/context/agent-instructions/src"],
       "@deepseek-ai/dsh-agent-loop": ["./packages/core/agent-loop/src"],
       "@deepseek-ai/dsh-agent-loop-testkit": ["./packages/test-support/agent-loop-testkit/src"],
+      "@deepseek-ai/dsh-agent-plane": ["./packages/bundle/agent-plane/src"],
       "@deepseek-ai/dsh-agent-preset": ["./packages/preset/agent-preset/src"],
       "@deepseek-ai/dsh-agent-preset-registry": ["./packages/preset/agent-preset-registry/src"],
       "@deepseek-ai/dsh-agent-tool-presentation": ["./packages/core/agent-tool-presentation/src"],
@@ -483,6 +485,7 @@
       "@deepseek-ai/dsh-session-title-first-prompt-llm": ["./packages/session/session-title-first-prompt-llm/src"],
       "@deepseek-ai/dsh-session-title-llm": ["./packages/session/session-title-llm/src"],
       "@deepseek-ai/dsh-session-turn-outline": ["./packages/session/session-turn-outline/src"],
+      "@deepseek-ai/dsh-session-worker": ["./packages/bundle/session-worker/src"],
       "@deepseek-ai/dsh-session-worker-bridge": ["./packages/api/session-worker-bridge/src"],
       "@deepseek-ai/dsh-session-worker-host": ["./packages/api/session-worker-host/src"],
       "@deepseek-ai/dsh-session-worker-protocol": ["./packages/api/session-worker-protocol/src"],

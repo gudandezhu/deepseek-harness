@@ -32,6 +32,7 @@
     "@deepseek-ai/dsh-base": "workspace:*",
     "@deepseek-ai/dsh-client-connection": "workspace:*",
     "@deepseek-ai/dsh-client-file-upload": "workspace:*",
+    "@deepseek-ai/dsh-harness-dev-context": "workspace:*",
     "@deepseek-ai/dsh-session-worker-bridge": "workspace:*",
     "@deepseek-ai/dsh-workspace": "workspace:*"
   },

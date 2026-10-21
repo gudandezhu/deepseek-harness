@@ -4,6 +4,8 @@ import {
   AsyncQueueOverflowError,
   SessionWorkerFrameDecoder,
   SessionWorkerProtocolError,
+  asHostToWorkerFrame,
+  asWorkerToHostFrame,
   decodeBody,
   encodeBody,
   encodeFrame,
@@ -53,6 +55,20 @@ describe('session worker frames', () => {
       },
       { channel: 'rpc', type: 'shutdown', requestId: 'shutdown-1' },
       { channel: 'rpc', type: 'shutdown-result', requestId: 'shutdown-1', flushedSessions: 1 },
+      {
+        channel: 'rpc',
+        type: 'host-call',
+        requestId: 'call-1',
+        service: 'schedule',
+        method: 'list',
+        payload: { request: { sessionId: 'session-1' } },
+      },
+      {
+        channel: 'rpc',
+        type: 'host-call-result',
+        requestId: 'call-1',
+        result: { ok: true, value: { items: [] } },
+      },
       { channel: 'mux', type: 'open', streamId: 's1', endpoint: 'session/follow', payload: { args: {} } },
       { channel: 'mux', type: 'item', streamId: 's1', value: { hello: 'world' } },
       { channel: 'mux', type: 'item', streamId: 's1' },
@@ -70,6 +86,20 @@ describe('session worker frames', () => {
     for (const frame of frames) {
       expect(parseFrameLine(encodeFrame(frame).trimEnd())).toEqual(frame)
     }
+  })
+
+  it('keeps reverse calls and their results on their own sides', () => {
+    const call = {
+      channel: 'rpc', type: 'host-call', requestId: 'call-1',
+      service: 'schedule', method: 'list', payload: {},
+    } as const
+    const result = {
+      channel: 'rpc', type: 'host-call-result', requestId: 'call-1', result: { ok: true, value: null },
+    } as const
+    expect(asWorkerToHostFrame(call)).toBe(call)
+    expect(asHostToWorkerFrame(result)).toBe(result)
+    expect(() => asHostToWorkerFrame(call)).toThrow(SessionWorkerProtocolError)
+    expect(() => asWorkerToHostFrame(result)).toThrow(SessionWorkerProtocolError)
   })
 
   it('decodes frames split across arbitrary chunks and ignores blank lines', () => {

@@ -1,0 +1,156 @@
+# The shared agent-plane policy over dsh-base, applied by every profile whose
+# agents mount a preset: the web surface and the session worker.
+#
+# Each agent's tools, prompt sections, and delegation backends live behind a
+# preset instead of the process-wide base rows. This layer disables those base
+# rows and mounts the preset registry; the preset declarations follow as
+# separate patch files under `presets/`, listed after this file in
+# `package.json` `dsh.bundle.patch`.
+#
+# Disabling rather than deleting is deliberate: the base is shared with the TUI,
+# which composes one agent process-wide, and a row absent from this overlay
+# would silently reappear the day someone reorders the composition.
+
+- id: tools
+  config:
+    # TEMPORARY workaround: DSH_TOOLS_MODE (native|ptc) opts a whole dsh
+    # process into PTC mode while per-session tool-presentation selection is being
+    # designed; unset keeps the schema default (native). Remove the env seam
+    # once the web UI owns the choice per session.
+    mode: !!js process.env.DSH_TOOLS_MODE
+
+# ── rows owned by presets ──────────────────────────────────────────────────
+
+# `shell-env` STAYS in the host plane: `apps/cli/src/web.ts` injects it to
+# publish `DSH_WEB_URL`/`DSH_WEB_MODE`, and a host row that injects a service is
+# the criterion for host-plane ownership — injection resolves before any session
+# exists, so there is no agent to key by. Behind a preset realm those variables
+# would never reach the model's shell at all.
+
+- id: tool-plugin-manager
+  disabled: true
+
+- id: tool-bash
+  disabled: true
+
+- id: tool-pwsh
+  disabled: true
+
+# The background-job REGISTRY stays in the host plane; only the model-facing
+# `job_*` controls move. Its producers — `tool-bash` here and `tool-terminal`
+# elsewhere — are preset rows that resolve it
+# with `ctx.get`, and an entry-local realm around the registry is invisible to
+# every sibling row outside that realm, so `run_in_background` answered
+# "background jobs unavailable" while the controls sat in the catalog. That is
+# the `goals` criterion read from inside the preset: a Service a row outside its
+# realm READS belongs to the plane both can see. The registry is keyed by owning
+# agent, so one host instance serves every session exactly as before presets.
+
+- id: tool-jobs
+  disabled: true
+
+- id: tool-fs
+  disabled: true
+
+- id: tool-fs-search
+  disabled: true
+
+# The `skill` REGISTRY stays in the host plane. It is host+per-scope layered
+# (the tools-registry shape): deployment-level providers — repository plugins,
+# a host skill-filesystem row — register into its global layer, while a preset's
+# `skill-filesystem` registers into that preset's layer, and each agent reads the
+# merged catalog its scope chain selects. Only the per-agent rows move behind
+# presets: the base host `skill-filesystem` row is disabled here (presets own local
+# discovery), and `tool-skill` is what a preset mounts to give its agent the
+# catalog and loader at all.
+
+- id: skill-filesystem
+  disabled: true
+
+- id: tool-skill
+  disabled: true
+
+# The goal service and session driver stay on the host plane, where Gateway
+# remotes resolve them. Presets own the human command and model-facing tool.
+
+- id: command-goal
+  disabled: true
+
+- id: tool-goal
+  disabled: true
+
+- id: plan-mode
+  disabled: true
+
+# The token METER stays on the host plane; only the compaction backend that
+# reads it moves. It owns the context-meter projection units, and that table is
+# process-wide, so preset ownership would make the meter a function of which
+# presets happen to be mounted rather than a per-session fact. Same criterion as
+# `tasks` and `goals`; the reasoning has one home in
+# `.agents/notes/implemented/architecture/2026-08-10-host-plane-ownership-after-presets.md`.
+
+- id: compaction-basic
+  disabled: true
+
+- id: command-compact
+  disabled: true
+
+- id: tool-result-pruner
+  disabled: true
+
+# The subagent registry and its backends STAY in the host plane. `subagents` is
+# a process singleton with a cross-session query surface (`listChildren`,
+# `followup`) that the host api-proxy serves to the browser, and a provider
+# registers under a globally unique name, so a per-session copy would both
+# starve that host row and collide on the second session. What a preset
+# chooses is which delegation TOOLS its agent sees, below.
+
+- id: tool-subagent-control
+  disabled: true
+
+- id: tool-subagent-list-agents
+  disabled: true
+
+- id: tool-subagent
+  disabled: true
+
+- id: tool-subagent-fork
+  disabled: true
+
+- id: workflow-ptc
+  disabled: true
+
+- id: tool-workflow
+  disabled: true
+
+- id: agent-instructions
+  disabled: true
+
+- id: tool-todo
+  disabled: true
+
+- id: tool-web
+  disabled: true
+
+# Services the preset rows read and the per-Agent `@path` guidance installs
+# with. Both must live in the process that runs the Agent: the settings
+# namespace for subagent model selection, the process-global inspect providers
+# behind the `cordis` preset's tool, and the local file-reference provider whose
+# prompt section tells the model how to treat referenced paths. The Web surface
+# also reads `fileReferences` for its picker in the same process.
+- insert:
+    - id: subagent-model-selection-settings
+      name: '@deepseek-ai/dsh-tool-subagent/model-selection-settings'
+
+    - id: cordis-inspect-providers
+      name: '@deepseek-ai/dsh-tool-cordis/host'
+
+    - id: file-reference-local
+      name: '@deepseek-ai/dsh-file-reference-local'
+
+# The preset selection registry.
+- insert:
+    - id: agent-preset-registry
+      name: '@deepseek-ai/dsh-agent-preset-registry'
+      config:
+        default: standard

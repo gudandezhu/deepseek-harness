@@ -181,13 +181,13 @@ export const PROFILE_TEMPLATES: Record<string, ProfileTemplate> = {
     bundles: ['@deepseek-ai/dsh-base', '@deepseek-ai/dsh-acp-app'],
   },
   web: {
-    bundles: ['@deepseek-ai/dsh-base', '@deepseek-ai/dsh-web-app'],
+    bundles: ['@deepseek-ai/dsh-base', '@deepseek-ai/dsh-agent-plane', '@deepseek-ai/dsh-web-app'],
   },
   headless: {
     bundles: ['@deepseek-ai/dsh-base', '@deepseek-ai/dsh-headless'],
   },
   'session-worker': {
-    bundles: ['@deepseek-ai/dsh-base', '@deepseek-ai/dsh-session-worker'],
+    bundles: ['@deepseek-ai/dsh-base', '@deepseek-ai/dsh-agent-plane', '@deepseek-ai/dsh-session-worker'],
   },
   sdk: {
     bundles: ['@deepseek-ai/dsh-base', '@deepseek-ai/dsh-sdk-app'],
@@ -671,6 +671,34 @@ function normalizeShippedProfile(name: string, dir: string, manifest: ProfileMan
   return normalized
 }
 
+/** The shared preset plane every Web or session-worker surface mounts before its surface bundle. */
+const AGENT_PLANE_BUNDLE = '@deepseek-ai/dsh-agent-plane'
+
+/** Surface bundles whose profiles mount {@link AGENT_PLANE_BUNDLE} immediately before them. */
+const AGENT_PLANE_SURFACES: readonly string[] = [
+  '@deepseek-ai/dsh-web-app',
+  '@deepseek-ai/dsh-session-worker',
+]
+
+/**
+ * Insert the shared agent plane ahead of the profile's surface bundle, writing
+ * the manifest back only when the list lacked it. Profiles installed before the
+ * bundle existed gain the presets their surface already expected.
+ */
+function ensureAgentPlane(dir: string, manifest: ProfileManifest): ProfileManifest {
+  const bundles = manifest.dsh?.profile?.bundles
+  if (bundles === undefined || bundles.includes(AGENT_PLANE_BUNDLE)) return manifest
+  const anchor = bundles.findIndex(bundle => AGENT_PLANE_SURFACES.includes(bundle))
+  if (anchor === -1) return manifest
+  const normalized = withBundles(manifest, [
+    ...bundles.slice(0, anchor),
+    AGENT_PLANE_BUNDLE,
+    ...bundles.slice(anchor),
+  ])
+  writeProfileManifest(dir, normalized)
+  return normalized
+}
+
 /**
  * Remove {@link RETIRED_BUNDLES} from a profile's bundle list, writing the
  * manifest back only when it listed one.
@@ -804,7 +832,8 @@ export function loadProfile(
     initProfile(dir, template.bundles)
   }
   removeLinkProjections(dir)
-  normalizeShippedProfile(name, dir, readProfileManifest(binName, dir))
+  const normalized = normalizeShippedProfile(name, dir, readProfileManifest(binName, dir))
+  ensureAgentPlane(dir, normalized)
   return loadProfileDirectory(binName, dir, installAnchor, options)
 }
 

@@ -23,6 +23,7 @@ kind: "package-group"
 | 包 | 职责 | ctx key |
 |---|---|---|
 | [`base`](base/README.zh.md) | 基于 base 的 profile 共享核心 | —（仅 patch） |
+| [`agent-plane`](agent-plane/README.zh.md) | Web 与 session-worker 共用的 preset 注册表与声明 | 挂载 `agentPresets` |
 | [`acp-app`](acp-app/README.zh.md) | 基于 base、仅用于自动化的 ACP stdio 应用 | 挂载 ACP bridge |
 | [`web-app`](web-app/README.zh.md) | 基于 base 的浏览器应用层 | 挂载多条 Web 配置行 |
 | [`headless`](headless/README.zh.md) | 基于 base 的一次性命令行任务应用 | `headless-runner` |

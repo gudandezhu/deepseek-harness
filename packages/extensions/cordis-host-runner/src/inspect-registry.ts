@@ -95,6 +95,14 @@ export class CordisInspectRegistryService extends Service {
   }
 
   /**
+   * Read the mirrored Client provider directory.
+   * @returns the current Client manifest snapshot.
+   */
+  clientProviders(): readonly CordisInspectProviderManifest[] {
+    return this.clientManifest ?? []
+  }
+
+  /**
    * Return the complete known Host and Client provider directory.
    * @returns Host providers followed by the Client providers.
    */

@@ -1,5 +1,6 @@
 /** Prompt stability of the harness checkout and Web GUI URL across processes, checkouts, and ports. */
 
+import { readFile } from 'node:fs/promises'
 import { describe, expect, it, onTestFinished } from 'vitest'
 import { Context } from '@deepseek-ai/cordis'
 import type { Agent } from '@deepseek-ai/dsh-agent'
@@ -22,6 +23,13 @@ const WEB_GUIDANCE = 'When the user refers to "this page", "this GUI", or "this 
   + 'The apps/web Vite entry builds the shell but is not a standalone application because only dsh web injects window.__DSH_BOOT__. '
   + 'Do not start a replacement server unless the user asks; if one is needed, use a managed background job and verify its exact URL.'
 const WEB_PROMPT = `You are interacting with the user through the DeepSeek Harness Web GUI whose URL the runtime context names. ${WEB_GUIDANCE}`
+const DELIVERABLES_PROMPT = 'Prefer showing the primary results within your final response alongside a brief explanation. '
+  + 'Use ![Description](<path/to/image.png>) when an image supports an explanation or comparison. Use [Description](<path/to/image.png>) when referring to an image or listing files. Enclose Markdown file destinations in angle brackets, especially paths containing spaces. '
+  + 'Do not call present just to list edited source files, or run commands to check whether a diff view will appear. '
+  + 'Use present when a separate file card helps the user open the complete deliverable, including images, Office documents, spreadsheets, and slide decks. Each presented file adds a card below the reply, with preview and native-open actions. '
+  + 'Avoid repeating results already shown inline unless the separate card adds useful access. '
+  + 'Outside commands, configuration expressions, and code blocks, link every mention of an existing file, including repeats and tables, to its full path relative to the working directory or absolute; append #L24 or #L24-L30 to the target for known lines. '
+  + 'Use the filename or a clear alias as the label, adding only enough parent directories to distinguish files; keep full paths out of labels. Default to the name alone; when precise locations matter, append :24 or :24–30, with no # or L in the line suffix.'
 
 /** The value-bearing paragraphs earlier releases rendered. */
 const LEGACY_SOURCE = 'The DeepSeek Harness implementation checkout is at /old/checkout/. The checkout location and current working directory are separate values and may differ; never infer the working directory from this path. Use pwd to determine the current working directory. Use this checkout only to inspect or extend DSH itself.'
@@ -140,6 +148,13 @@ describe('harness-dev-context', () => {
     const assembly = await ctx.systemPrompt.assemble()
     expect(assembly.sections.filter(entry => entry.name === 'harness:source' || entry.name === 'app:web-surface')
       .map(entry => entry.text)).toEqual([SOURCE_PROMPT, WEB_PROMPT])
+    expect(assembly.sections.find(entry => entry.name === 'ui:deliverable-file-references')?.text)
+      .toBe(DELIVERABLES_PROMPT)
+    // Live request pins track current guidance; seeded sessions retain theirs.
+    for (const scenario of ['fresh-round-trip', 'ptc-round']) {
+      const sidecar = await readFile(new URL(`../../../../snapshots/web/${scenario}/system-prompt.expected.md`, import.meta.url), 'utf8')
+      expect(sidecar, scenario).toContain(DELIVERABLES_PROMPT)
+    }
     expect(renderPrompt(assembly)).not.toContain('127.0.0.1')
     expect(renderContextSnapshot(assembly).split('\n\n').slice(1)).toEqual([
       expect.stringMatching(/^Current DeepSeek Harness implementation checkout: ".+"\.$/u),
@@ -148,7 +163,9 @@ describe('harness-dev-context', () => {
 
     await fiber.dispose()
     const disposed = await ctx.systemPrompt.assemble()
-    expect(disposed.sections.some(entry => entry.name === 'harness:source' || entry.name === 'app:web-surface')).toBe(false)
+    expect(disposed.sections.some(entry => entry.name === 'harness:source'
+      || entry.name === 'app:web-surface'
+      || entry.name === 'ui:deliverable-file-references')).toBe(false)
     expect(disposed.contexts).toEqual([])
   })
 

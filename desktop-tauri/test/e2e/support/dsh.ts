@@ -577,7 +577,7 @@ export async function scaffoldDshProfile(options: StartDshHostOptions): Promise<
 
   const home = mkdtempSync(join(tmpdir(), `dsh-e2e-${plugin}-`))
   const profileDir = join(home, 'profiles', PROFILE)
-  const bundles = ['@deepseek-ai/dsh-base', '@deepseek-ai/dsh-web-app', ...packages]
+  const bundles = ['@deepseek-ai/dsh-base', '@deepseek-ai/dsh-agent-plane', '@deepseek-ai/dsh-web-app', ...packages]
 
   try {
     writeProfile(profileDir, bundles)
