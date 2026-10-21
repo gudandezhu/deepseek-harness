@@ -2,7 +2,7 @@ import { beforeEach, describe, expect, it } from 'vitest'
 import { PRESET_FIXTURE } from './__tests__/model-preset-fixtures'
 import { presetFor, setPresetTable } from './model-presets'
 
-const GRADED = { off: null, low: 'low', medium: 'medium', high: 'high' }
+const GRADED = { off: null, medium: 'medium', high: 'high' }
 const VISION = ['text', 'image']
 
 describe('presetFor with the downloaded table', () => {

@@ -62,6 +62,8 @@ Keep this log exhaustive — every divergence from upstream must be listed.
 
 24. **`timer/locale/{en,zh}.json` display metadata**: local English and Chinese titles and descriptions for the Settings plugin inventory. `timer/package.json` exports and publishes these locale resources.
 
+25. **`loader/src/config/entry.ts` volatile-config interpolation order**: `_commitVolatile` resolves `!!js` expressions before the `internal/config` waterfall. The loader's interpolation listener resolves on the way out, so a plugin listener that validates the candidate inside the waterfall (e.g. `llm-pi-ai`) previously received inert `{ __jsExpr }` nodes and rejected every live settings edit. Evaluating first gives those listeners the same values a reload would provide while the stored raw options keep their expressions. `ConfigEditor.edit` performs the same pre-evaluation for its own validation. Covered by `packages/settings/settings/tests/configuration.spec.ts`.
+
 ## Sync procedure
 
 To update a vendored package from upstream:

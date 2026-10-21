@@ -4,8 +4,8 @@ import { join } from 'node:path'
 import { isDeepStrictEqual } from 'node:util'
 import { Context, FiberState, Service, resolveConfig } from '@deepseek-ai/cordis'
 import { entryListSchema, type PatchOptions } from '@deepseek-ai/cordis-plugin-include'
+import { interpolate, type Entry, type EntryOptions } from '@deepseek-ai/cordis-plugin-loader'
 import yaml from 'js-yaml'
-import type { Entry, EntryOptions } from '@deepseek-ai/cordis-plugin-loader'
 import type {} from '@deepseek-ai/dsh-hmr'
 import {
   composeEntries,
@@ -148,7 +148,12 @@ export class ConfigEditor extends Service {
           const next = change(current, inherited)
           const fiber = entry.fiber
           if (fiber === undefined || fiber.state !== FiberState.ACTIVE) throw new Error('Configuration plugin is no longer active')
-          const resolved: unknown = fiber.ctx.waterfall(fiber, 'internal/config', next, () => next)
+          // Loader interpolates `!!js` on the way out of the waterfall, so a plugin
+          // listener that validates the candidate sees unresolved expression objects.
+          // Evaluate first: listeners get the values they would see after a reload,
+          // while `next` keeps the expressions that must stay in the document.
+          const evaluated: unknown = interpolate(fiber.ctx, next)
+          const resolved: unknown = fiber.ctx.waterfall(fiber, 'internal/config', evaluated, () => evaluated)
           resolveConfig(fiber.runtime as NonNullable<typeof fiber.runtime>, resolved)
           let before: string
           try { before = await readFile(path, 'utf8') }

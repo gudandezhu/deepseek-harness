@@ -3,7 +3,7 @@ import { deepEqual, isNullable, updateVolatile, volatileEntries, type Volatile }
 import { Loader } from '../index.ts'
 import { EntryGroup } from './group.ts'
 import { EntryTree } from './tree.ts'
-import { evaluate, isJsExpr } from './utils.ts'
+import { evaluate, interpolate, isJsExpr } from './utils.ts'
 import { equalExceptVolatile } from './diff.ts'
 
 /** Serialized plugin entry options stored in loader config files. */
@@ -168,7 +168,12 @@ export class Entry {
     const raw = this.options.config
     let candidate: unknown
     try {
-      candidate = resolveConfig(fiber.runtime!, fiber.ctx.waterfall(fiber, 'internal/config', raw, () => raw))
+      // Plugin listeners run inside the waterfall and validate the value they
+      // receive, while the loader's own interpolation listener resolves `!!js`
+      // on the way out. Evaluate first so those listeners see the same values
+      // a reload would hand them; the raw options keep their expressions.
+      const evaluated: unknown = interpolate(fiber.ctx, raw)
+      candidate = resolveConfig(fiber.runtime!, fiber.ctx.waterfall(fiber, 'internal/config', evaluated, () => evaluated))
     } catch (error) {
       this.ctx.logger.warn('volatile config update failed for %C', this.options.id)
       this.ctx.logger.warn(error)

@@ -4,6 +4,7 @@ import { join } from 'node:path'
 import { expect, it, vi } from 'vitest'
 import { parse } from 'yaml'
 import z from '@deepseek-ai/schemastery'
+import { Config } from '@deepseek-ai/dsh-llm-pi-ai'
 import { configurationFixture as fixture } from './configuration-fixture.ts'
 
 it('persists a model edit, updates the real consumer without remounting, and restores it at restart', async () => {
@@ -50,6 +51,43 @@ it('preserves expressions in the shared home layer while editing another live fi
   expect(ctx.settings.describe().find(row => row.ns === 'first')!.value).toMatchObject({ count: 4 })
   const entry = [...ctx.loader.entries()].find(row => row.options.id === 'first')!
   expect((entry.fiber!.config as { ordinary: string }).ordinary).toBe('expression-value')
+})
+
+it('resolves home expressions before a plugin validates the candidate config', async () => {
+  const first = await fixture({
+    schema: Config as never,
+    // llm-pi-ai validates the candidate inside `internal/config`; it must see
+    // resolved values, not the loader's inert `{ __jsExpr }` nodes.
+    apply: (ctx) => {
+      ctx.on('internal/config', function (_raw: unknown, next: () => unknown) {
+        const raw = next()
+        Config(raw as never)
+        return raw
+      })
+    },
+  })
+  await first.ctx.fiber.dispose()
+  const homePath = join(first.home, 'cordis.patch.yml')
+  writeFileSync(homePath, `- id: first
+  config:
+    providers:
+      relay:
+        api: anthropic-messages
+        baseURL: !!js "'http://relay.test'"
+        models:
+          - id: model-one
+`)
+  const ctx = await first.start()
+  await ctx.settings.mutate('first', [
+    { op: 'set', path: ['providers', 'relay', 'models'], value: [{ id: 'model-one' }, { id: 'model-two' }] },
+  ])
+  expect(readFileSync(homePath, 'utf8')).toContain('!!js')
+  expect(readFileSync(homePath, 'utf8')).toContain('model-two')
+  const value = ctx.settings.describe().find(row => row.ns === 'first')!.value as {
+    providers: { relay: { baseURL: string; models: { id: string }[] } }
+  }
+  expect(value.providers.relay.baseURL).toBe('http://relay.test')
+  expect(value.providers.relay.models.map(model => model.id)).toEqual(['model-one', 'model-two'])
 })
 
 it('edits values defined by the shared home layer in that document', async () => {

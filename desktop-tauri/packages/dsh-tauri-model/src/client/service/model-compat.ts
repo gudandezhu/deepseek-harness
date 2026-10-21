@@ -4,7 +4,6 @@ export const THINKING_LEVELS = ['off', 'minimal', 'low', 'medium', 'high', 'xhig
 
 export const DEFAULT_THINKING_EFFORTS: Readonly<Record<string, string | null>> = {
   off: null,
-  low: 'low',
   medium: 'medium',
   high: 'high',
 }

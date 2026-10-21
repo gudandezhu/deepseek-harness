@@ -13,7 +13,7 @@ interface FamilyRule {
   reasoning?: boolean
 }
 
-const GRADED = { off: null, low: 'low', medium: 'medium', high: 'high' } as const
+const GRADED = { off: null, medium: 'medium', high: 'high' } as const
 
 const MIN_PREFIX_LENGTH = 3
 
