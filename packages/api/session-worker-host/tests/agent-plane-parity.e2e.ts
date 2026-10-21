@@ -19,6 +19,7 @@ import { startMockLlmServer, type MockLlmServer } from '@deepseek-ai/dsh-llm-moc
 import {
   announcedUrl,
   authenticate,
+  delay,
   MuxClient,
   requestRpc,
   StreamReader,
@@ -29,6 +30,7 @@ const cliEntry = join(repositoryRoot, 'apps/cli/src/bin.ts')
 const PROMPT = 'Describe the tools you have.'
 const MOCK_TEXT = 'mock parity reply'
 const UI_TIMEOUT_MS = Number(process.env.DSH_PARITY_TIMEOUT_MS ?? 120_000)
+const AUXILIARY_TIMEOUT_MS = 10_000
 const LOOPBACK_URL = /(?:https?|wss?):\/\/(?:127\.0\.0\.1|localhost|\[::1\]):\d+/g
 const ISO_TIMESTAMP = /\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?(?:Z|[+-]\d{2}:\d{2})/g
 
@@ -48,7 +50,12 @@ interface NormalizedRequest {
 }
 
 interface RunResult {
-  readonly request: NormalizedRequest
+  /** The conversation request, identified by its tool catalog. */
+  readonly main: NormalizedRequest
+  /** Auxiliary requests the Session issues on its own, such as title generation. */
+  readonly auxiliary: readonly NormalizedRequest[]
+  /** The title event the browser receives from this Session. */
+  readonly title: unknown
 }
 
 let server: MockLlmServer
@@ -70,27 +77,38 @@ afterAll(async () => {
 })
 
 describe('agent plane parity', () => {
-  it('sends the single-process and worker compositions the same model request', async () => {
-    const project = await mkdtemp(join(tmpdir(), 'dsh-agent-plane-parity-project-'))
-    try {
-      const single = await runHost({ project, disableWorker: true })
-      const worker = await runHost({ project, disableWorker: false })
-      expect(worker.request).toEqual(single.request)
-      expect(worker.request.tools.length).toBeGreaterThan(0)
-      expect(worker.request.messages).toBeDefined()
-    } finally {
-      const retry = { recursive: true, force: true, maxRetries: 10, retryDelay: 100 } as const
-      await rm(project, retry)
-    }
-  }, 300_000)
+  it.each(['standard', 'ptc', 'minimal', 'cordis'])(
+    'sends the single-process and worker %s compositions the same model request',
+    async (agentPreset) => {
+      const project = await mkdtemp(join(tmpdir(), 'dsh-agent-plane-parity-project-'))
+      try {
+        const single = await runHost({ project, disableWorker: true, agentPreset })
+        const worker = await runHost({ project, disableWorker: false, agentPreset })
+        expect(worker.main).toEqual(single.main)
+        expect(worker.auxiliary).toEqual(single.auxiliary)
+        expect(worker.auxiliary).toHaveLength(1)
+        expect(worker.main.tools.length).toBeGreaterThan(0)
+        expect(worker.main.messages).toBeDefined()
+        expect(worker.title).toEqual(single.title)
+      } finally {
+        const retry = { recursive: true, force: true, maxRetries: 10, retryDelay: 100 } as const
+        await rm(project, retry)
+      }
+    },
+    300_000,
+  )
 })
 
 /**
  * Boot one Web host, run a single turn, and return the main model request.
- * @param options - shared project cwd and whether to disable the worker host.
+ * @param options - shared project cwd, Agent preset, and whether to disable the worker host.
  * @returns the request body the mock model received.
  */
-async function runHost(options: { readonly project: string; readonly disableWorker: boolean }): Promise<RunResult> {
+async function runHost(options: {
+  readonly project: string
+  readonly agentPreset: string
+  readonly disableWorker: boolean
+}): Promise<RunResult> {
   const home = await mkdtemp(join(tmpdir(), 'dsh-agent-plane-parity-home-'))
   homes.push(home)
   const patches: string[] = []
@@ -120,7 +138,9 @@ async function runHost(options: { readonly project: string; readonly disableWork
     const url = await announcedUrl(host, UI_TIMEOUT_MS)
     const origin = new URL(url).origin
     const cookie = await authenticate(url)
-    const created = await requestRpc(origin, cookie, 'session/create', { request: { cwd: options.project } })
+    const created = await requestRpc(origin, cookie, 'session/create', {
+      request: { cwd: options.project, agentPreset: options.agentPreset },
+    })
     expect(created.ok, JSON.stringify(created)).toBe(true)
     const sessionId = (created as { ok: true; value: { sessionId: string } }).value.sessionId
 
@@ -144,14 +164,23 @@ async function runHost(options: { readonly project: string; readonly disableWork
       },
     })
     expect(prompted.ok, JSON.stringify(prompted)).toBe(true)
-    await waitForTurnEnd(follow, startIndex)
-
-    const request = server.requests
-      .slice(startIndex)
-      .map(record => record.body as ModelRequest)
-      .find(body => Array.isArray(body.tools))
-    if (request === undefined) throw new Error('the mock model received no tool-bearing request')
-    return { request: normalizeRequest(request) }
+    const { title } = await waitForTurnEnd(follow, startIndex)
+    // Title generation is asynchronous; wait for its auxiliary request so both
+    // runs compare the same set.
+    const deadline = Date.now() + AUXILIARY_TIMEOUT_MS
+    let bodies: ModelRequest[] = []
+    while (Date.now() < deadline) {
+      bodies = server.requests.slice(startIndex).map(record => record.body as ModelRequest)
+      if (bodies.some(body => !Array.isArray(body.tools))) break
+      await delay(50)
+    }
+    const main = bodies.find(body => Array.isArray(body.tools))
+    if (main === undefined) throw new Error('the mock model received no tool-bearing request')
+    return {
+      main: normalizeRequest(main),
+      auxiliary: bodies.filter(body => !Array.isArray(body.tools)).map(normalizeRequest),
+      title,
+    }
   } finally {
     mux?.close()
     await stop(host)
@@ -159,27 +188,34 @@ async function runHost(options: { readonly project: string; readonly disableWork
 }
 
 /**
- * Poll cold history until the turn's end event is durable.
- * @param origin - host origin.
- * @param cookie - authenticated browser cookie.
- * @param sessionId - session under test.
+ * Read the browser stream until the turn ends and the Session title arrives.
+ * @param reader - followed Session stream.
+ * @param requestStart - mock request count before this run, for diagnostics.
+ * @returns the title event data shown to the browser.
  */
-async function waitForTurnEnd(reader: StreamReader, requestStart: number): Promise<void> {
+async function waitForTurnEnd(reader: StreamReader, requestStart: number): Promise<{ readonly title: unknown }> {
   const deadline = Date.now() + UI_TIMEOUT_MS
   const seen: string[] = []
+  let ended = false
+  let title: unknown
   while (Date.now() < deadline) {
     const frame = await reader.next(deadline - Date.now()) as {
       readonly type: string
-      readonly event?: { readonly type?: string }
+      readonly event?: { readonly type?: string; readonly data?: unknown }
     }
     if (frame.type !== 'event') continue
     seen.push(frame.event?.type ?? '?')
-    if (frame.event?.type === 'turn/end') return
+    if (frame.event?.type === 'session/title') title = frame.event.data
+    if (frame.event?.type === 'turn/end') ended = true
+    if (ended && title !== undefined) return { title }
   }
-  throw new Error(
-    `the turn did not finish before the deadline; events: ${seen.join(',')};`
-    + ` model requests: ${String(server.requests.length - requestStart)}`,
-  )
+  if (!ended) {
+    throw new Error(
+      `the turn did not finish before the deadline; events: ${seen.join(',')};`
+      + ` model requests: ${String(server.requests.length - requestStart)}`,
+    )
+  }
+  throw new Error(`the turn ended without a Session title; events: ${seen.join(',')}`)
 }
 
 /**
