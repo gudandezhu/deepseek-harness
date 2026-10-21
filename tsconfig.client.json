@@ -22,6 +22,7 @@
     "apps/desktop/src/ipc.ts",
     "apps/desktop/src/update-overlay.ts",
     "apps/desktop/tests/**/*.client.spec.tsx",
+    // The native/renderer keyboard fixture imports only these Cordis-free Desktop modules.
     // Source-subpath test imports can arrive through workspace links whose
     // realpath semantics vary by host. Load package CSS declarations directly.
     "packages/client/*/src/css-modules.d.ts",
@@ -53,9 +54,9 @@
     "packages/client/*/tests/**/*.host.ts"
   ],
   "references": [
+    { "path": "./apps/desktop/tsconfig.client.json" },
     { "path": "./packages/experimental/client-ui-cot-translation/tsconfig.client.json" },
     { "path": "./packages/client/product-analytics/tsconfig.client.json" },
-    { "path": "./apps/desktop/tsconfig.client.json" },
     { "path": "./packages/util/atomic-write" },
     { "path": "./packages/experimental/client-ui-voice-input" },
     { "path": "./packages/experimental/client-ui-claude-code-mods" },

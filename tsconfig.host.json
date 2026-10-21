@@ -203,10 +203,10 @@
     "apps/web/tests/workflow-run.e2e.ts",
     "apps/web/stress-tests/reasoning-chunks.stress.ts",
     "apps/cli/tests/**/*.ts",
-    "apps/plugin-market-generator/tests/**/*.ts",
     "apps/desktop/scripts/**/*.ts",
     "apps/desktop/tests/**/*.ts",
     "apps/desktop-host/tests/**/*.ts",
+    "apps/plugin-market-generator/tests/**/*.ts",
     "benchmarks/**/*.ts",
     "packages/*/*/tests/**/*.ts",
     "packages/experimental/cua-macos/native/generate-protocol.ts",
@@ -223,6 +223,8 @@
   // and the package test glob above needs no per-file entry.
   "exclude": [
     "apps/desktop/tests/keyboard.spec.ts",
+    "packages/subagent/subagent-codex/**",
+    "packages/subagent/subagent-claude-code/**",
     "packages/client/*/src/**",
     "benchmarks/**/*.client.ts",
     "benchmarks/**/*.client.tsx",
@@ -491,8 +493,6 @@
     { "path": "./packages/subagent/subagent-spawn-in-process" },
     { "path": "./packages/subagent/subagent-fork-in-process" },
     { "path": "./packages/subagent/subagent-acp" },
-    { "path": "./packages/subagent/subagent-claude-code" },
-    { "path": "./packages/subagent/subagent-codex" },
     { "path": "./packages/subagent/subagent-dsh-sdk" },
     { "path": "./packages/jobs/jobs" },
     { "path": "./packages/jobs/jobs-local" },
@@ -539,6 +539,6 @@
     { "path": "./apps/cli" },
     { "path": "./apps/plugin-market-generator" },
     { "path": "./apps/desktop-host" },
-    { "path": "./apps/desktop/tsconfig.host.json" }
+    { "path": "./apps/desktop/tsconfig.host.json" },
   ]
 }

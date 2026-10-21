@@ -72,7 +72,22 @@ const nonLinuxWebWorkerTests = process.platform === 'linux'
       'packages/experimental/webworker-runtime/tests/node/sandbox-stack.spec.ts',
     ]
 
-const platformUnsupportedTests = [...windowsUnsupportedTests, ...nonLinuxWebWorkerTests]
+// Kept in the tree but outside the local-only pnpm workspace: their dependencies
+// are intentionally not installed here (see pnpm-workspace.yaml).
+const localOnlyExcludes = [
+  'packages/subagent/subagent-codex/**',
+  'packages/subagent/subagent-claude-code/**',
+  // Their subject workflows were removed from this local-only checkout.
+  'scripts/ci-workflow.spec.ts',
+  'scripts/client-build-environment.client.spec.ts',
+  'scripts/desktop-publish-workflow.spec.ts',
+  'scripts/macos-package-workflow.spec.ts',
+  'scripts/windows-package-workflow.spec.ts',
+  'scripts/tests/ci-master-platforms.spec.ts',
+  'scripts/tests/ci-release-selfhosted.spec.ts',
+]
+
+const platformUnsupportedTests = [...windowsUnsupportedTests, ...nonLinuxWebWorkerTests, ...localOnlyExcludes]
 
 const windowsUnsupportedCoveragePackages = process.platform === 'win32'
   ? [...windowsUnsupportedPackages, 'packages/subprocess/*']

@@ -7,6 +7,10 @@ packages:
   - native/system/packages/*
   # Product assemblies over the package tier; apps/cli owns the `dsh` bin.
   - apps/*
+  # Local-only checkout: these projects stay in the tree but are not installed
+  # by default. Re-add a line here when working on that target.
+  - '!packages/subagent/subagent-codex'
+  - '!packages/subagent/subagent-claude-code'
   # Private package owning repository-level benchmark dependencies.
   - benchmarks
   - website
@@ -47,9 +51,7 @@ allowBuilds:
   # The Python runtime deploy includes the reviewed workspace postinstall that
   # restores the executable bit on node-pty's macOS spawn helper.
   '@deepseek-ai/dsh-subprocess-local@file:packages/subprocess/subprocess-local': true
-  # electron-builder pulls in the optional Squirrel.Windows helper, whose
-  # install script only selects its bundled 7-Zip executable. Desktop ships
-  # Windows through NSIS, so that mutation is not part of our build.
+  # Electron packaging is not built in this local-only checkout.
   electron-winstaller: false
   # Store-index rewriting only needs msgpackr's portable JavaScript codec.
   msgpackr-extract: false
@@ -107,10 +109,8 @@ minimumReleaseAgeExclude:
   - electron@44.7.0
 patchedDependencies:
   '@earendil-works/pi-ai@1.1.0': patches/@earendil-works__pi-ai@1.1.0.patch
-  '@electron/osx-sign@1.3.3': patches/@electron__osx-sign@1.3.3.patch
   '@fortune-sheet/core@1.0.4': patches/@fortune-sheet__core@1.0.4.patch
   '@fortune-sheet/react@1.0.4': patches/@fortune-sheet__react@1.0.4.patch
   '@yao-pkg/pkg@6.21.0': patches/@yao-pkg__pkg@6.21.0.patch
-  app-builder-lib@26.17.0: patches/app-builder-lib@26.17.0.patch
   exceljs@4.4.0: patches/exceljs@4.4.0.patch
   node-pty@1.2.0-beta.15: patches/node-pty@1.2.0-beta.15.patch
