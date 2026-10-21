@@ -14,11 +14,7 @@ resolver = "2"
 # to make the lib name unique and wouldn't conflict with the bin name.
 # This seems to be only an issue on Windows, see https://github.com/rust-lang/cargo/issues/8519
 name = "main"
-crate-type = [
-  "staticlib",
-  "cdylib",
-  "rlib"
-]
+crate-type = ["rlib"]
 
 [build-dependencies]
 tauri-build = { version = "2", features = [] }
@@ -174,6 +170,14 @@ tauri-plugin-notifications = { path = "vendor/tauri-plugin-notifications" }
 # 行号表而非完整调试信息：panic 与回溯仍能定位到行，target 体积与链接耗时都随之下降
 [profile.dev]
 debug = 1
+
+# 依赖只保留符号、不带调试信息：本 crate 仍可逐行调试，target 体积主要来自
+# objc2/tauri 依赖的 DWARF。构建脚本同理。
+[profile.dev.package."*"]
+debug = false
+
+[profile.dev.build-override]
+debug = false
 
 [target.'cfg(windows)'.dependencies]
 webview2-com = "0.39"

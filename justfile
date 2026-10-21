@@ -119,6 +119,10 @@ local-kernel:
     @printf '#!/bin/sh\nexec node "%s/apps/cli/lib/bin.js" "$@"\n' "{{justfile_directory()}}" > "{{kernel}}/bin/dsh"
     @chmod +x "{{kernel}}/bin/dsh"
 
+# 清 Rust 构建缓存（约 2.4G）；下次启动桌面时重新编译。
+clean-rust:
+    cd desktop-tauri/src-tauri && cargo clean
+
 # 按源码变化重建内核与桌面插件；无变化时跳过。
 ensure-desktop-build:
     {{pnpm}} run ensure:desktop-build
