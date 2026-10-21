@@ -339,12 +339,38 @@ pub(super) fn kill_pid_tree(pid: u32) {
 ///
 /// 输出形如 `   12345 node /path/to/bin.js --profile web ...`（PID 前可能有
 /// 前导空格、行尾有换行）。PID 缺失或不可解析的行返回 None（跳过该行）。
-#[cfg_attr(windows, allow(dead_code))] // 仅 Unix 清场分支与测试使用
+#[cfg(test)]
 fn parse_ps_line(line: &str) -> Option<(u32, &str)> {
     let trimmed = line.trim_start();
     let split = trimmed.find(|c: char| c.is_whitespace())?;
     let pid = trimmed[..split].trim().parse::<u32>().ok()?;
     Some((pid, trimmed[split..].trim_start()))
+}
+
+/// 解析 `ps -axo pid=,ppid=,command=` 的一行：返回 `(PID, 父 PID, 命令行)`。
+#[cfg_attr(windows, allow(dead_code))] // 仅 Unix 清场分支与测试使用
+fn parse_ps_line_with_parent(line: &str) -> Option<(u32, u32, &str)> {
+    let trimmed = line.trim_start();
+    let pid_end = trimmed.find(|c: char| c.is_whitespace())?;
+    let pid = trimmed[..pid_end].trim().parse::<u32>().ok()?;
+    let rest = trimmed[pid_end..].trim_start();
+    let parent_end = rest.find(|c: char| c.is_whitespace())?;
+    let parent = rest[..parent_end].trim().parse::<u32>().ok()?;
+    let cmdline = rest[parent_end..].trim_start();
+    (!cmdline.is_empty()).then_some((pid, parent, cmdline))
+}
+
+/// 进程是否已失去宿主：父进程是 launchd（1），或父进程已不在快照里。
+///
+/// Tauri dev 热重启后旧内核被 launchd 收养，正是这个形态；仍在运行的另一个
+/// dev 实例的内核父进程存活，因此不会被回收。
+#[cfg_attr(windows, allow(dead_code))] // 仅 Unix 清场分支与测试使用
+fn is_orphaned(pid: u32, parents: &std::collections::HashMap<u32, u32>) -> bool {
+    match parents.get(&pid) {
+        Some(&1) => true,
+        Some(parent) => !parents.contains_key(&parent),
+        None => true,
+    }
 }
 
 /// 判断命令行中是否包含一个完整参数。
@@ -953,30 +979,41 @@ pub fn terminate_stale_harness_processes(app_handle: &tauri::AppHandle) -> Resul
     }
     #[cfg(not(windows))]
     {
-        if cfg!(debug_assertions) {
-            return Ok(());
-        }
         // Unix 同样需要按路径清扫：打开中的文件允许重命名确实不阻塞更新切换，
         // 但崩溃/强杀残留的孤儿 dsh 实例会持续监听端口，下一次启动只能一路
         // 漂移端口（3080→3081→…）并被持久化，表现为「更新后端口递增」
-        // （issue #91）。用 `ps -ww -axo pid=,command=` 枚举完整命令行（`-ww`
-        // 防止 macOS 按终端宽度截断长路径），按参数边界匹配本应用 dsh 入口与
-        // 服务参数，不会误杀用户其它 node/dsh 命令，因此可安全地全部结束。
+        // （issue #91）。用 `ps -ww -axo pid=,ppid=,command=` 枚举完整命令行
+        // （`-ww` 防止 macOS 按终端宽度截断长路径），按参数边界匹配本应用 dsh
+        // 入口与服务参数，不会误杀用户其它 node/dsh 命令。
+        //
+        // debug 构建只回收已失去宿主的进程：`tauri dev` 每次热重启都会把旧内核
+        // 留给 launchd（ppid=1），不清理就会与新内核并存、争抢同一个会话锁；
+        // 另一个仍在运行的 dev 实例的内核父进程存活，必须保留。
         let dsh_bin = config::get_dsh_binary_path(app_handle);
         let Some(dsh_bin_str) = dsh_bin.to_str() else {
             return Err("HARNESS_SWEEP_FAILED: invalid entry path".to_string());
         };
         let Ok(output) = Command::new("ps")
-            .args(["-ww", "-axo", "pid=,command="])
+            .args(["-ww", "-axo", "pid=,ppid=,command="])
             .output()
         else {
             return Err("HARNESS_SWEEP_FAILED: cannot enumerate service processes".to_string());
         };
-        for line in String::from_utf8_lossy(&output.stdout).lines() {
-            let Some((pid, cmdline)) = parse_ps_line(line) else {
+        let text = String::from_utf8_lossy(&output.stdout);
+        let mut parents = std::collections::HashMap::new();
+        let mut rows = Vec::new();
+        for line in text.lines() {
+            let Some((pid, parent, cmdline)) = parse_ps_line_with_parent(line) else {
                 continue;
             };
+            parents.insert(pid, parent);
+            rows.push((pid, cmdline));
+        }
+        for (pid, cmdline) in rows {
             if !is_harness_command_line(cmdline, dsh_bin_str) {
+                continue;
+            }
+            if cfg!(debug_assertions) && !is_orphaned(pid, &parents) {
                 continue;
             }
             log::warn!("Terminating stale Harness service process {pid} (from dsh install dir)");
@@ -1624,6 +1661,32 @@ mod tests {
         assert!(parse_ps_line("PID COMMAND").is_none());
         // 空行 → 跳过
         assert!(parse_ps_line("").is_none());
+    }
+
+    #[test]
+    fn parse_ps_line_with_parent_reads_pid_ppid_and_cmdline() {
+        let (pid, parent, cmdline) =
+            parse_ps_line_with_parent("   12345     1 node /path/bin.js --profile web")
+                .expect("parse ps line");
+        assert_eq!(pid, 12345);
+        assert_eq!(parent, 1);
+        assert_eq!(cmdline, "node /path/bin.js --profile web");
+        assert!(parse_ps_line_with_parent("12345 1").is_none());
+        assert!(parse_ps_line_with_parent("PID PPID COMMAND").is_none());
+    }
+
+    #[test]
+    fn orphan_detection_keeps_processes_with_a_live_parent() {
+        let parents = std::collections::HashMap::from([
+            (1, 0),
+            (100, 1),
+            (200, 100),
+            (300, 999), // 999 不在快照里：父进程已退出
+        ]);
+        assert!(is_orphaned(100, &parents));
+        assert!(!is_orphaned(200, &parents));
+        assert!(is_orphaned(300, &parents));
+        assert!(is_orphaned(400, &parents));
     }
 
     /// 命令行匹配：argv 整词精确等于 dsh 入口路径才算本应用服务实例。
