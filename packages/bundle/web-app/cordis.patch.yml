@@ -117,6 +117,13 @@
         readyTimeoutMs: 120000
         shutdownTimeoutMs: 15000
         graceMs: 10000
+        # Host-side live cache bounds. The package defaults (4096 events and 64
+        # cold Sessions for five minutes) fit a shared server; a web/desktop
+        # Host serves one user and re-reads a cold Session from its log, so a
+        # smaller window is enough and keeps RSS bounded after large Sessions.
+        liveEventLimit: 1024
+        coldSessionTtlMs: 60000
+        maxColdSessions: 8
         # The worker's dev-context row reads the same advertised GUI URL, so
         # its system prompt matches the single-process composition.
         env:

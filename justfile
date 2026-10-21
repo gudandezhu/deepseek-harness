@@ -137,3 +137,10 @@ dev-desktop: ensure-desktop-build local-kernel
 # 特性差异由 Tauri 自身决定。
 build-desktop:
     cd desktop-tauri && ./node_modules/.bin/tauri build --debug -- --no-default-features
+
+# 以构建产物启动桌面：前端来自 dist，不跑 Vite，也没有开发版 React。
+# 比 `just dev-desktop` 少一个 50MB 级进程和页面调试开销；改源码后仍需 dev-desktop。
+# 启动前先退出旧实例：否则会再起一个内核（端口顺延），两个内核会抢同一会话。
+run-desktop: ensure-desktop-build local-kernel
+    cd desktop-tauri && pnpm run build:debug -- --skip-plugins
+    cd desktop-tauri && DSH_HOME="${DSH_HOME:-$HOME/.dsh}" DSH_CLI_PATH="{{kernel}}/bin/dsh" ./src-tauri/target/debug/deepseek-harness-desktop
